@@ -7,6 +7,98 @@
 # 
 # Licensed under the MIT License
 
+# Transaction state tracking
+declare -a TRANSACTION_STEPS=()
+declare TRANSACTION_DOMAIN=""
+declare TRANSACTION_USERNAME=""
+declare TRANSACTION_ACTIVE=false
+
+# Add a completed step to transaction
+transaction_add_step() {
+    local step="$1"
+    TRANSACTION_STEPS+=("$step")
+}
+
+# Rollback all changes
+transaction_rollback() {
+    if [ "$TRANSACTION_ACTIVE" = false ]; then
+        return 0
+    fi
+    
+    echo ""
+    print_warning "Rolling back changes..."
+    
+    # Rollback in reverse order
+    for ((i=${#TRANSACTION_STEPS[@]}-1; i>=0; i--)); do
+        local step="${TRANSACTION_STEPS[i]}"
+        case "$step" in
+            "domain_dir")
+                if [ -d "$WEB_ROOT/$TRANSACTION_DOMAIN" ]; then
+                    print_info "Removing domain directory: $WEB_ROOT/$TRANSACTION_DOMAIN"
+                    rm -rf "$WEB_ROOT/$TRANSACTION_DOMAIN"
+                fi
+                ;;
+            "config_saved")
+                if [ -f "$WEB_ROOT/$TRANSACTION_DOMAIN/config.json" ]; then
+                    print_info "Removing configuration file"
+                    rm -f "$WEB_ROOT/$TRANSACTION_DOMAIN/config.json"
+                fi
+                ;;
+            "user_created")
+                if [ -n "$TRANSACTION_USERNAME" ] && id "$TRANSACTION_USERNAME" &>/dev/null; then
+                    print_info "Removing user: $TRANSACTION_USERNAME"
+                    userdel -r "$TRANSACTION_USERNAME" 2>/dev/null || true
+                fi
+                ;;
+            "ssh_keys")
+                if [ -d "/home/$TRANSACTION_USERNAME/.ssh" ]; then
+                    print_info "Removing SSH keys"
+                    rm -rf "/home/$TRANSACTION_USERNAME/.ssh"
+                fi
+                ;;
+            "nginx_config")
+                if [ -f "$NGINX_SITES/$TRANSACTION_DOMAIN" ]; then
+                    print_info "Removing Nginx configuration"
+                    rm -f "$NGINX_SITES/$TRANSACTION_DOMAIN"
+                fi
+                if [ -L "$NGINX_ENABLED/$TRANSACTION_DOMAIN" ]; then
+                    rm -f "$NGINX_ENABLED/$TRANSACTION_DOMAIN"
+                fi
+                systemctl reload nginx 2>/dev/null || true
+                ;;
+            "ssl_cert")
+                if [ -d "/etc/letsencrypt/live/$TRANSACTION_DOMAIN" ]; then
+                    print_info "Removing SSL certificates"
+                    certbot delete --cert-name "$TRANSACTION_DOMAIN" --non-interactive 2>/dev/null || true
+                fi
+                ;;
+            "sshd_config")
+                if [ -f "/etc/ssh/sshd_config.d/hostkit-$TRANSACTION_USERNAME.conf" ]; then
+                    print_info "Removing SSH daemon configuration"
+                    rm -f "/etc/ssh/sshd_config.d/hostkit-$TRANSACTION_USERNAME.conf"
+                    systemctl reload sshd 2>/dev/null || true
+                fi
+                ;;
+        esac
+    done
+    
+    TRANSACTION_STEPS=()
+    TRANSACTION_ACTIVE=false
+    print_success "Rollback completed"
+}
+
+# Setup trap handlers for cleanup on exit
+setup_transaction_trap() {
+    trap 'transaction_rollback; exit 130' INT TERM
+    TRANSACTION_ACTIVE=true
+}
+
+# Remove trap handlers
+remove_transaction_trap() {
+    trap - INT TERM
+    TRANSACTION_ACTIVE=false
+}
+
 # Check if port is already in use by another website
 check_port_conflict() {
     local port="$1"
@@ -46,6 +138,10 @@ get_next_available_port() {
 }
 
 register_website() {
+    # Initialize transaction system
+    TRANSACTION_STEPS=()
+    TRANSACTION_ACTIVE=false
+    
     # Disable strict error handling for user input phase
     safe_mode_off
     
@@ -178,6 +274,11 @@ register_website() {
         return 1
     fi
     
+    # Setup transaction tracking and trap handlers
+    TRANSACTION_DOMAIN="$domain"
+    TRANSACTION_USERNAME="$username"
+    setup_transaction_trap
+    
     # Re-enable strict error handling for system operations
     safe_mode_on
     
@@ -185,6 +286,7 @@ register_website() {
     echo ""
     print_step "Creating directory structure..."
     mkdir -p "$WEB_ROOT/$domain"/{deploy,images,logs}
+    transaction_add_step "domain_dir"
     print_success "Directories created"
     
     # Create configuration
@@ -207,6 +309,7 @@ register_website() {
     "current_version": null
 }
 EOF
+    transaction_add_step "config_saved"
     
     # Create SSH user
     echo ""
@@ -243,6 +346,10 @@ EOF
     if [ ${#redirect_domains[@]} -gt 0 ]; then
         print_info "Redirect domains: ${redirect_domains[*]} -> $domain"
     fi
+    
+    # Transaction completed successfully - remove trap handlers
+    remove_transaction_trap
+    print_success "Registration completed successfully - all changes committed"
 }
 
 create_ssh_user() {
@@ -261,6 +368,7 @@ create_ssh_user() {
         passwd -l "$username" >/dev/null 2>&1
         # Set account expiry to never
         chage -E -1 "$username" >/dev/null 2>&1
+        transaction_add_step "user_created"
         print_success "User created with hardened settings"
     fi
     
@@ -291,6 +399,7 @@ create_ssh_user() {
         ssh-keygen -t rsa -b 4096 -f "${private_key}-rsa" -N "" -C "deploy-rsa@$domain" >/dev/null 2>&1
         ssh-keygen -t ed25519 -f "$private_key" -N "" -C "deploy@$domain" >/dev/null 2>&1
         
+        transaction_add_step "ssh_keys"
         print_success "SSH keys generated (both RSA 4096-bit and Ed25519)"
         print_info "RSA key: ${private_key}-rsa (GitHub Actions compatible)"
         print_info "Ed25519 key: $private_key (recommended for modern systems)"
@@ -331,6 +440,7 @@ Match User $username
     ClientAliveInterval 300
     ClientAliveCountMax 2
 EOF
+    transaction_add_step "sshd_config"
     
     # Set strict permissions
     chmod 700 "$ssh_dir"
@@ -585,6 +695,7 @@ setup_certbot() {
     print_step "Requesting certificates for: $domains_list"
     
     if certbot certonly --nginx $domain_args --non-interactive --agree-tos --email "admin@$domain" --expand; then
+        transaction_add_step "ssl_cert"
         print_success "SSL certificates successfully created/updated"
         
         # Verify the new certificate covers all domains
@@ -753,6 +864,7 @@ EOF
 
     # Enable site
     ln -sf "$config_file" "$NGINX_ENABLED/$domain"
+    transaction_add_step "nginx_config"
     
     # Test Nginx configuration
     if nginx -t 2>/dev/null; then
