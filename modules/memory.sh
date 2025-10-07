@@ -3,6 +3,16 @@
 # memory.sh - Simplified Memory Management Module
 # Part of HostKit - VPS Website Management Tool
 
+# Color definitions (in case module is sourced independently)
+if [ -z "$RED" ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    CYAN='\033[0;36m'
+    WHITE='\033[1;37m'
+    NC='\033[0m'
+fi
+
 # Get total system memory in MB
 get_total_memory() {
     local total_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
