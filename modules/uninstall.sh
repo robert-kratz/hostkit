@@ -142,7 +142,7 @@ get_uninstall_selection() {
                 ;;
             *)
                 print_error "Invalid option: $selection"
-                print_info "Choose: minimal, standard, complete, nuclear, or custom"
+                print_info "Please choose: minimal, standard, complete, nuclear, or custom"
                 continue
                 ;;
         esac

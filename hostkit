@@ -309,27 +309,27 @@ read_domain_input() {
     local domain=""
     
     while true; do
-        echo -ne "${CYAN}${prompt}: ${NC}"
+        echo -ne "${CYAN}${prompt}: ${NC}" >&2
         read -r domain
         
         if [ -z "$domain" ]; then
-            print_error "Domain cannot be empty"
+            print_error "Domain cannot be empty" >&2
             continue
         fi
         
         if ! validate_domain "$domain"; then
-            print_error "Invalid domain format. Use format like: example.com"
-            print_info "Domain must:"
-            echo "  - Start and end with alphanumeric characters"
-            echo "  - Contain only letters, numbers, dots, and hyphens"
-            echo "  - Not have consecutive dots or hyphens"
-            echo "  - Be less than 254 characters"
+            print_error "Invalid domain format. Use format like: example.com" >&2
+            print_info "Domain must:" >&2
+            echo "  - Start and end with alphanumeric characters" >&2
+            echo "  - Contain only letters, numbers, dots, and hyphens" >&2
+            echo "  - Not have consecutive dots or hyphens" >&2
+            echo "  - Be less than 254 characters" >&2
             continue
         fi
         
         # Check if domain already exists
         if [ -d "$WEB_ROOT/$domain" ]; then
-            print_error "Domain $domain is already registered"
+            print_error "Domain $domain is already registered" >&2
             if ask_yes_no "Try a different domain?"; then
                 continue
             else
@@ -348,20 +348,20 @@ read_port_input() {
     local port=""
     
     while true; do
-        echo -ne "${CYAN}${prompt} (suggested: $suggested_port): ${NC}"
+        echo -ne "${CYAN}${prompt} (suggested: $suggested_port): ${NC}" >&2
         read -r port
         port=${port:-$suggested_port}
         
         if ! validate_port "$port"; then
-            print_error "Invalid port number. Must be between 1024-65535"
+            print_error "Invalid port number. Must be between 1024-65535" >&2
             continue
         fi
         
         # Check for port conflicts
         if ! check_port_conflict "$port" ""; then
-            print_error "Port $port is already in use by another website"
+            print_error "Port $port is already in use by another website" >&2
             local next_port=$(get_next_available_port $((port + 1)))
-            print_info "Next available port: $next_port"
+            print_info "Next available port: $next_port" >&2
             if ask_yes_no "Use port $next_port instead?"; then
                 echo "$next_port"
                 return 0
@@ -380,22 +380,22 @@ read_username_input() {
     local username=""
     
     while true; do
-        echo -ne "${CYAN}${prompt} (Enter for $suggested_username): ${NC}"
+        echo -ne "${CYAN}${prompt} (Enter for $suggested_username): ${NC}" >&2
         read -r username
         username=${username:-$suggested_username}
         
         if ! validate_username "$username"; then
-            print_error "Invalid username format"
-            print_info "Username must:"
-            echo "  - Start with a lowercase letter"
-            echo "  - Contain only lowercase letters, numbers, hyphens, underscores"
-            echo "  - Be less than 33 characters"
+            print_error "Invalid username format" >&2
+            print_info "Username must:" >&2
+            echo "  - Start with a lowercase letter" >&2
+            echo "  - Contain only lowercase letters, numbers, hyphens, underscores" >&2
+            echo "  - Be less than 33 characters" >&2
             continue
         fi
         
         # Check if user already exists
         if id "$username" &>/dev/null; then
-            print_error "User $username already exists"
+            print_error "User $username already exists" >&2
             if ask_yes_no "Try a different username?"; then
                 continue
             else
