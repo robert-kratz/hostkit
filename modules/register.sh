@@ -117,7 +117,7 @@ register_website() {
     # Memory allocation
     echo ""
     print_step "Memory Allocation"
-    source_module "memory"
+    source "/opt/hostkit/modules/memory.sh"
     local memory_values=$(select_memory_limit "$domain" "")
     local memory_limit=$(echo "$memory_values" | awk '{print $1}')
     local memory_reservation=$(echo "$memory_values" | awk '{print $2}')
