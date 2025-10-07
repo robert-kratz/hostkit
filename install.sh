@@ -69,6 +69,12 @@ install_dependencies() {
     print_info "Updating package list..."
     apt-get update -qq
     
+    # Remove conflicting docker-buildx-plugin if present
+    if dpkg -l | grep -q "docker-buildx-plugin"; then
+        print_info "Removing conflicting docker-buildx-plugin..."
+        DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq docker-buildx-plugin 2>/dev/null || true
+    fi
+    
     local packages=("docker.io" "nginx" "certbot" "python3-certbot-nginx" "jq" "curl")
     local to_install=()
     
@@ -85,6 +91,11 @@ install_dependencies() {
     else
         print_success "All dependencies already installed"
     fi
+    
+    # Fix any broken packages from docker conflicts
+    print_info "Fixing package configuration..."
+    DEBIAN_FRONTEND=noninteractive dpkg --configure -a 2>/dev/null || true
+    DEBIAN_FRONTEND=noninteractive apt-get install -f -y -qq 2>/dev/null || true
     
     # Enable and start Docker
     if ! systemctl is-active --quiet docker; then
