@@ -166,11 +166,14 @@ register_website() {
     echo -e "${CYAN}Examples: example.com, subdomain.example.com${NC}"
     echo ""
     
-    # Simple domain input
+    # Simple domain input - use plain prompts without colors
     local domain=""
     while [ -z "$domain" ]; do
-        read -p "Main domain: " domain
-        domain=$(echo "$domain" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+        echo -n "Main domain: "
+        read -r domain
+        
+        # Clean input: remove all whitespace, ANSI codes, and convert to lowercase
+        domain=$(echo "$domain" | sed 's/\x1b\[[0-9;]*m//g' | tr -d ' \t\r\n' | tr '[:upper:]' '[:lower:]')
         
         if [ -z "$domain" ]; then
             echo -e "${RED}✗ Domain cannot be empty${NC}"
@@ -196,10 +199,11 @@ register_website() {
     if ask_yes_no "Add redirect domains? (e.g., www.$domain)"; then
         echo -e "${CYAN}ℹ Enter domains one by one, then press Enter on empty line to continue${NC}"
         while true; do
-            read -p "Redirect domain: " -r additional_domain
+            echo -n "Redirect domain: "
+            read -r additional_domain
             
-            # Trim whitespace and convert to lowercase
-            additional_domain=$(echo "$additional_domain" | xargs 2>/dev/null | tr '[:upper:]' '[:lower:]')
+            # Clean input: remove ANSI codes, trim whitespace, convert to lowercase
+            additional_domain=$(echo "$additional_domain" | sed 's/\x1b\[[0-9;]*m//g' | xargs 2>/dev/null | tr '[:upper:]' '[:lower:]')
             
             # Empty input = done adding domains
             if [ -z "$additional_domain" ] || [ "$additional_domain" = "" ]; then
@@ -227,8 +231,16 @@ register_website() {
     
     local port=""
     while [ -z "$port" ]; do
-        read -p "Internal container port [$suggested_port]: " port
+        echo -n "Internal container port [$suggested_port]: "
+        read -r port
         port=${port:-$suggested_port}
+        
+        # Clean input: remove non-digits
+        port=$(echo "$port" | tr -cd '0-9')
+        
+        if [ -z "$port" ]; then
+            port=$suggested_port
+        fi
         
         if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]; then
             echo -e "${RED}✗ Port must be between 1024-65535${NC}"
@@ -253,9 +265,12 @@ register_website() {
     
     local username=""
     while [ -z "$username" ]; do
-        read -p "Deployment username [$suggested_username]: " username
+        echo -n "Deployment username [$suggested_username]: "
+        read -r username
         username=${username:-$suggested_username}
-        username=$(echo "$username" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+        
+        # Clean input: remove ANSI codes, whitespace, convert to lowercase
+        username=$(echo "$username" | sed 's/\x1b\[[0-9;]*m//g' | tr -d ' \t\r\n' | tr '[:upper:]' '[:lower:]')
         
         if ! validate_username "$username"; then
             echo -e "${RED}✗ Invalid username (lowercase letters, numbers, hyphens only)${NC}"
@@ -287,8 +302,16 @@ register_website() {
     
     local memory_limit=""
     while [ -z "$memory_limit" ]; do
-        read -p "Memory limit in MB [512]: " memory_limit
+        echo -n "Memory limit in MB [512]: "
+        read -r memory_limit
         memory_limit=${memory_limit:-512}
+        
+        # Clean input: only keep digits
+        memory_limit=$(echo "$memory_limit" | tr -cd '0-9')
+        
+        if [ -z "$memory_limit" ]; then
+            memory_limit=512
+        fi
         
         if ! [[ "$memory_limit" =~ ^[0-9]+$ ]] || [ "$memory_limit" -lt 128 ]; then
             echo -e "${RED}✗ Minimum 128MB required${NC}"
