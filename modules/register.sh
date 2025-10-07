@@ -163,115 +163,157 @@ register_website() {
     # Main domain with validation and retry
     echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${WHITE}Step 1: Domain Configuration${NC}"
-    echo -e "${CYAN}Enter your main domain name without http:// or https://${NC}"
     echo -e "${CYAN}Examples: example.com, subdomain.example.com${NC}"
     echo ""
     
-    local domain
-    domain=$(read_domain_input "Main domain")
-    if [ $? -ne 0 ]; then
-        print_error "Registration cancelled"
-        safe_mode_on
-        return 1
-    fi
+    # Simple domain input
+    local domain=""
+    while [ -z "$domain" ]; do
+        read -p "Main domain: " domain
+        domain=$(echo "$domain" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+        
+        if [ -z "$domain" ]; then
+            echo -e "${RED}✗ Domain cannot be empty${NC}"
+            continue
+        fi
+        
+        if [ -d "$WEB_ROOT/$domain" ]; then
+            echo -e "${RED}✗ Domain already registered${NC}"
+            domain=""
+            continue
+        fi
+        
+        if ! validate_domain "$domain"; then
+            echo -e "${RED}✗ Invalid domain format${NC}"
+            domain=""
+            continue
+        fi
+    done
     
-    # Additional redirect domains with validation
+    # Simple redirect domains
     local redirect_domains=()
     echo ""
-    print_info "You can add additional domains that will redirect to the main domain" >&2
-    echo ""
-    
-    if ask_yes_no "Do you want to add redirect domains?"; then
-        echo "" >&2
+    if ask_yes_no "Add redirect domains? (e.g., www.$domain)"; then
         while true; do
-            echo -ne "${CYAN}Additional domain (press Enter to finish): ${NC}" >&2
-            read -r additional_domain
+            read -p "Redirect domain (or press Enter to finish): " additional_domain
+            additional_domain=$(echo "$additional_domain" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
             
-            # Check for empty input to exit loop
-            if [ -z "$additional_domain" ]; then
-                print_info "Finished adding redirect domains" >&2
-                break
+            [ -z "$additional_domain" ] && break
+            
+            if validate_domain "$additional_domain" && [ ! -d "$WEB_ROOT/$additional_domain" ]; then
+                redirect_domains+=("$additional_domain")
+                echo -e "${GREEN}✓ Added: $additional_domain${NC}"
+            else
+                echo -e "${YELLOW}⚠ Skipped (invalid or already exists)${NC}"
             fi
-            
-            # Validate additional domain
-            if ! validate_domain "$additional_domain"; then
-                print_error "Invalid domain format: $additional_domain" >&2
-                print_info "Please use a valid domain format like: subdomain.example.com" >&2
-                continue
-            fi
-            
-            # Check if additional domain already exists
-            if [ -d "$WEB_ROOT/$additional_domain" ]; then
-                print_warning "Domain $additional_domain is already registered, skipping" >&2
-                continue
-            fi
-            
-            redirect_domains+=("$additional_domain")
-            print_success "Added: $additional_domain" >&2
         done
     fi
     
-    # Port with validation and conflict detection
+    # Simple port input
     local suggested_port=$(get_next_available_port 3000)
     echo ""
     echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${WHITE}Step 2: Port Assignment${NC}"
-    echo -e "${CYAN}Choose the internal port where your Docker container will listen${NC}"
-    echo -e "${CYAN}Nginx will forward external traffic (80/443) to this port${NC}"
-    echo -e "${CYAN}Common ports: 3000 (Node.js), 8080 (Java), 5000 (Python)${NC}"
     echo ""
     
-    local port
-    port=$(read_port_input "Internal container port" "$suggested_port")
-    if [ $? -ne 0 ]; then
-        print_error "Registration cancelled"
-        return 1
-    fi
+    local port=""
+    while [ -z "$port" ]; do
+        read -p "Internal container port [$suggested_port]: " port
+        port=${port:-$suggested_port}
+        
+        if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]; then
+            echo -e "${RED}✗ Port must be between 1024-65535${NC}"
+            port=""
+            continue
+        fi
+        
+        if ! check_port_conflict "$port" ""; then
+            echo -e "${RED}✗ Port already in use${NC}"
+            suggested_port=$(get_next_available_port $((port + 1)))
+            echo -e "${CYAN}ℹ Next available: $suggested_port${NC}"
+            port=""
+        fi
+    done
     
-    # Username with validation
+    # Simple username input
     local suggested_username="deploy-${domain//./-}"
     echo ""
     echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${WHITE}Step 3: User Setup${NC}"
-    echo -e "${CYAN}A dedicated system user will be created for deployments${NC}"
-    echo -e "${CYAN}This user will have restricted SSH access for security${NC}"
     echo ""
     
-    local username
-    username=$(read_username_input "Deployment username" "$suggested_username")
-    if [ $? -ne 0 ]; then
-        print_error "Registration cancelled"
-        return 1
-    fi
+    local username=""
+    while [ -z "$username" ]; do
+        read -p "Deployment username [$suggested_username]: " username
+        username=${username:-$suggested_username}
+        username=$(echo "$username" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+        
+        if ! validate_username "$username"; then
+            echo -e "${RED}✗ Invalid username (lowercase letters, numbers, hyphens only)${NC}"
+            username=""
+            continue
+        fi
+        
+        if id "$username" &>/dev/null; then
+            echo -e "${RED}✗ User already exists${NC}"
+            username=""
+        fi
+    done
     
-    # Memory allocation
+    # Simple memory allocation
     echo ""
     echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${WHITE}Step 4: Memory Allocation${NC}"
-    echo -e "${CYAN}Set memory limits to control resource usage${NC}"
-    echo -e "${CYAN}Memory Limit: Maximum RAM the container can use (hard limit)${NC}"
-    echo -e "${CYAN}Memory Reservation: Minimum guaranteed RAM (soft limit)${NC}"
-    echo -e "${CYAN}System reserves 20% RAM for OS (min 512MB, max 2GB)${NC}"
+    echo -e "${CYAN}Common: 512MB (small), 1024MB (medium), 2048MB (large)${NC}"
     echo ""
     
-    source "/opt/hostkit/modules/memory.sh"
-    local memory_values=$(select_memory_limit "$domain" "")
-    local memory_limit=$(echo "$memory_values" | awk '{print $1}')
-    local memory_reservation=$(echo "$memory_values" | awk '{print $2}')
+    local total_mem=$(grep MemTotal /proc/meminfo | awk '{print int($2/1024)}')
+    local system_reserve=$((total_mem / 5))
+    [ "$system_reserve" -lt 512 ] && system_reserve=512
+    [ "$system_reserve" -gt 2048 ] && system_reserve=2048
+    local available=$((total_mem - system_reserve))
     
-    echo "" >&2
-    echo -e "${CYAN}ℹ Registering website with the following configuration:${NC}" >&2
-    echo -e "  ${WHITE}Main domain:${NC} $domain" >&2
+    echo -e "${CYAN}System memory: ${total_mem}MB | Available: ${available}MB${NC}"
+    echo ""
+    
+    local memory_limit=""
+    while [ -z "$memory_limit" ]; do
+        read -p "Memory limit in MB [512]: " memory_limit
+        memory_limit=${memory_limit:-512}
+        
+        if ! [[ "$memory_limit" =~ ^[0-9]+$ ]] || [ "$memory_limit" -lt 128 ]; then
+            echo -e "${RED}✗ Minimum 128MB required${NC}"
+            memory_limit=""
+            continue
+        fi
+        
+        if [ "$memory_limit" -gt "$available" ]; then
+            echo -e "${RED}✗ Exceeds available memory (${available}MB)${NC}"
+            memory_limit=""
+        fi
+    done
+    
+    local memory_reservation=$((memory_limit / 2))
+    memory_limit="${memory_limit}m"
+    memory_reservation="${memory_reservation}m"
+    
+    echo -e "${GREEN}✓ Memory limit: $memory_limit (reservation: $memory_reservation)${NC}"
+    
+    # Summary
+    echo ""
+    echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}Configuration Summary${NC}"
+    echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  Domain:   ${CYAN}$domain${NC}"
     if [ ${#redirect_domains[@]} -gt 0 ]; then
-        echo -e "  ${WHITE}Redirect domains:${NC} ${redirect_domains[*]}" >&2
+        echo -e "  Redirects: ${CYAN}${redirect_domains[*]}${NC}"
     fi
-    echo -e "  ${WHITE}Port:${NC} $port" >&2
-    echo -e "  ${WHITE}Username:${NC} $username" >&2
-    echo -e "  ${WHITE}Memory Limit:${NC} $memory_limit" >&2
-    echo -e "  ${WHITE}Memory Reservation:${NC} $memory_reservation" >&2
-    echo "" >&2
+    echo -e "  Port:     ${CYAN}$port${NC}"
+    echo -e "  User:     ${CYAN}$username${NC}"
+    echo -e "  Memory:   ${CYAN}$memory_limit${NC}"
+    echo ""
     
-    if ! ask_yes_no "Continue?"; then
+    if ! ask_yes_no "Proceed with registration?"; then
         print_warning "Registration cancelled"
         safe_mode_on
         return 1
