@@ -303,6 +303,33 @@ get_ssl_status() {
     fi
 }
 
+# Get container name from domain
+get_container_name() {
+    local domain="$1"
+    # Convert domain to container name (replace dots with dashes)
+    echo "${domain//./-}"
+}
+
+# Get container status
+get_container_status() {
+    local domain="$1"
+    local container_name=$(get_container_name "$domain")
+    
+    # Check if container exists and its status
+    if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            echo "running"
+            return 0
+        else
+            echo "stopped"
+            return 1
+        fi
+    else
+        echo "not_found"
+        return 2
+    fi
+}
+
 # Version Management
 get_current_version() {
     if [ -f "$VERSION_FILE" ]; then
