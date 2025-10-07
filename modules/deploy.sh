@@ -34,6 +34,8 @@ deploy_website() {
     local config=$(load_domain_config "$domain")
     local port=$(echo "$config" | jq -r '.port')
     local username=$(echo "$config" | jq -r '.username')
+    local memory_limit=$(echo "$config" | jq -r '.memory_limit // "512m"')
+    local memory_reservation=$(echo "$config" | jq -r '.memory_reservation // "256m"')
     
     print_step "Deploying website: $domain"
     echo ""
@@ -115,10 +117,13 @@ deploy_website() {
     
     # Start new container
     print_step "Starting new container..."
+    print_info "Memory limit: $memory_limit, reservation: $memory_reservation"
     
     docker run -d \
         --name "$container_name" \
         --restart unless-stopped \
+        --memory="$memory_limit" \
+        --memory-reservation="$memory_reservation" \
         -p "127.0.0.1:${port}:${port}" \
         -v "$WEB_ROOT/$domain/logs:/app/logs" \
         "${domain}:latest"

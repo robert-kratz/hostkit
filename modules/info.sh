@@ -114,6 +114,12 @@ show_website_info() {
             echo -e "  ${CYAN}Container ID:${NC}        $container_id"
             echo -e "  ${CYAN}Image:${NC}               $container_image"
             echo -e "  ${CYAN}Uptime:${NC}              $container_uptime"
+            
+            # Show memory usage if container is running
+            local mem_usage=$(docker stats "$container_name" --no-stream --format "{{.MemUsage}}" 2>/dev/null)
+            if [ -n "$mem_usage" ]; then
+                echo -e "  ${CYAN}Memory Usage:${NC}        $mem_usage"
+            fi
             ;;
         stopped)
             echo -e "  ${CYAN}Status:${NC}              ${YELLOW}○${NC} Stopped"
@@ -125,6 +131,12 @@ show_website_info() {
             echo -e "  ${YELLOW}Run 'hostkit deploy $domain' to create container${NC}"
             ;;
     esac
+    
+    # Show memory limits
+    local memory_limit=$(echo "$config" | jq -r '.memory_limit // "512m"')
+    local memory_reservation=$(echo "$config" | jq -r '.memory_reservation // "256m"')
+    echo -e "  ${CYAN}Memory Limit:${NC}        $memory_limit"
+    echo -e "  ${CYAN}Memory Reservation:${NC}  $memory_reservation"
     
     echo ""
     echo -e "${WHITE}SSL CERTIFICATE${NC}"

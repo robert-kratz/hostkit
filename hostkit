@@ -819,6 +819,13 @@ show_help() {
     echo -e "  ${GREEN}remove-key${NC} <domain|id> <name> Remove an SSH key from a website"
     echo -e "                              Removes from authorized_keys automatically"
     echo ""
+    echo -e "${WHITE}MEMORY MANAGEMENT:${NC}"
+    echo -e "  ${GREEN}set-memory${NC} <domain|id>     Set memory limits for a website"
+    echo -e "                              Shows available memory and current allocation"
+    echo -e "                              Optionally restarts container to apply limits"
+    echo -e "  ${GREEN}memory-stats${NC}               Show system memory overview and per-website allocation"
+    echo -e "                              Displays total, used, and available memory"
+    echo ""
     echo -e "${WHITE}SYSTEM:${NC}"
     echo -e "  ${GREEN}update${NC}                     Update HostKit to the latest version"
     echo -e "  ${GREEN}uninstall${NC}                  Uninstall HostKit with selective component removal"
@@ -1037,6 +1044,14 @@ main() {
         remove-key)
             source_module "ssh-keys"
             remove_domain_key "$@"
+            ;;
+        set-memory)
+            source_module "memory"
+            cmd_set_memory "$@"
+            ;;
+        memory-stats)
+            source_module "memory"
+            cmd_memory_stats "$@"
             ;;
         update)
             update_hostkit

@@ -114,6 +114,14 @@ register_website() {
         return 1
     fi
     
+    # Memory allocation
+    echo ""
+    print_step "Memory Allocation"
+    source_module "memory"
+    local memory_values=$(select_memory_limit "$domain" "")
+    local memory_limit=$(echo "$memory_values" | awk '{print $1}')
+    local memory_reservation=$(echo "$memory_values" | awk '{print $2}')
+    
     echo ""
     print_info "Registering website with the following configuration:"
     echo -e "  ${WHITE}Main domain:${NC} $domain"
@@ -122,6 +130,8 @@ register_website() {
     fi
     echo -e "  ${WHITE}Port:${NC} $port"
     echo -e "  ${WHITE}Username:${NC} $username"
+    echo -e "  ${WHITE}Memory Limit:${NC} $memory_limit"
+    echo -e "  ${WHITE}Memory Reservation:${NC} $memory_reservation"
     echo ""
     
     if ! ask_yes_no "Continue?"; then
@@ -153,6 +163,8 @@ register_website() {
     "all_domains": $domains_json,
     "port": $port,
     "username": "$username",
+    "memory_limit": "$memory_limit",
+    "memory_reservation": "$memory_reservation",
     "created": "$(date -Iseconds)",
     "current_version": null
 }

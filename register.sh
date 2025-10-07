@@ -298,7 +298,6 @@ EOF
     
     # Display both keys for copying
     display_ssh_keys_for_copying "$username" "$private_key" "$domain"
-fi
 }
 
 # Create SSH wrapper script for command restriction

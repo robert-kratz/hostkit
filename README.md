@@ -63,6 +63,15 @@ HostKit is a comprehensive CLI tool for managing Docker-based websites on your V
 -   Health checks for SSL expiry, container health, version info
 -   Container control (start, stop, restart)
 
+### Resource Management
+
+-   Per-website memory limits and reservations
+-   System memory overview with allocation visualization
+-   Automatic system reserve to protect OS performance
+-   Interactive memory allocation during registration
+-   Dynamic memory limit updates with container restart
+-   Real-time memory usage monitoring for running containers
+
 ### Developer Experience
 
 -   Interactive guided setup process
@@ -326,6 +335,26 @@ hostkit remove-key <domain|id> <key-name>
 
 For detailed information about multi-key management, see [SSH_KEY_MANAGEMENT.md](docs/SSH_KEY_MANAGEMENT.md).
 
+### Memory Management
+
+```bash
+# Set memory limits for a website
+hostkit set-memory <domain|id>
+
+# Show system memory overview and allocation
+hostkit memory-stats
+```
+
+The memory management system:
+
+-   Shows total system memory and reserves 20% for the operating system (min 512MB, max 2GB)
+-   Displays available memory for containers with visual progress bar
+-   Allows you to set memory limit (hard limit) and reservation (soft limit)
+-   Automatically calculates recommended reservation (50% of limit)
+-   Validates allocation to prevent over-allocation
+-   Optionally restarts running containers to apply new limits
+-   Displays real-time memory usage in `hostkit info` command
+
 ### System Management
 
 ```bash
@@ -576,6 +605,26 @@ sudo docker load -i /opt/domains/example.com/deploy/image.tar
 For more help, see [Security Enhancements](docs/SECURITY_ENHANCEMENTS.md).
 
 ## Changelog
+
+### Version 1.3.0 (October 2025)
+
+#### New Features
+
+-   **Memory Management System** - Per-website memory limits with interactive allocation
+-   **System Memory Overview** - Visual memory allocation with progress bars
+-   **Automatic System Reserve** - Protects OS performance by reserving 20% RAM
+-   **Real-time Memory Monitoring** - Shows current memory usage for running containers
+-   **Dynamic Memory Updates** - Change limits with optional container restart
+-   New `hostkit set-memory` command to configure memory limits per website
+-   New `hostkit memory-stats` command to show system-wide memory allocation
+
+#### Improvements
+
+-   Memory allocation during website registration
+-   Memory limits enforced on container start
+-   Memory usage displayed in `hostkit info` command
+-   Docker memory limits and reservations (soft limits) support
+-   Validation to prevent memory over-allocation
 
 ### Version 1.2.0 (October 2025)
 
