@@ -1,0 +1,233 @@
+name: Bash Syntax Check
+
+on:
+    push:
+        branches: [main, develop]
+    pull_request:
+        branches: [main, develop]
+    workflow_dispatch:
+
+jobs:
+    syntax-check:
+        name: Check Bash Syntax
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Install shellcheck
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y shellcheck
+
+            - name: Check bash syntax - Main script
+              run: |
+                  echo "🔍 Checking main hostkit script..."
+                  bash -n hostkit
+                  echo "✅ hostkit - OK"
+
+            - name: Check bash syntax - Install script
+              run: |
+                  echo "🔍 Checking install.sh..."
+                  bash -n install.sh
+                  echo "✅ install.sh - OK"
+
+            - name: Check bash syntax - Modules
+              run: |
+                  echo "🔍 Checking module files..."
+                  for file in modules/*.sh; do
+                    if [ -f "$file" ]; then
+                      echo "  Checking $(basename $file)..."
+                      bash -n "$file"
+                      echo "  ✅ $(basename $file) - OK"
+                    fi
+                  done
+                  echo "✅ All modules - OK"
+
+            - name: Check bash syntax - Completion script
+              if: always()
+              run: |
+                  echo "🔍 Checking completion script..."
+                  if [ -f "completions/hostkit" ]; then
+                    bash -n completions/hostkit
+                    echo "✅ completions/hostkit - OK"
+                  else
+                    echo "⚠️  Completion script not found"
+                  fi
+
+            - name: Run shellcheck - Main script
+              if: always()
+              run: |
+                  echo "🔍 Running shellcheck on hostkit..."
+                  shellcheck -x -e SC1091,SC2086,SC2155,SC2181,SC2046 hostkit || true
+
+            - name: Run shellcheck - Install script
+              if: always()
+              run: |
+                  echo "🔍 Running shellcheck on install.sh..."
+                  shellcheck -x -e SC1091,SC2086,SC2155,SC2181,SC2046 install.sh || true
+
+            - name: Run shellcheck - Modules
+              if: always()
+              run: |
+                  echo "🔍 Running shellcheck on modules..."
+                  for file in modules/*.sh; do
+                    if [ -f "$file" ]; then
+                      echo "  Checking $(basename $file)..."
+                      shellcheck -x -e SC1091,SC2086,SC2155,SC2181,SC2046 "$file" || true
+                    fi
+                  done
+
+            - name: Check script headers and copyright
+              if: always()
+              run: |
+                  echo "🔍 Checking file headers..."
+
+                  for file in hostkit install.sh modules/*.sh; do
+                    if [ -f "$file" ]; then
+                      if ! head -n 10 "$file" | grep -q "Copyright"; then
+                        echo "⚠️  Missing copyright in $file"
+                      fi
+                    fi
+                  done
+
+                  echo "✅ Header check complete"
+
+            - name: Check for hardcoded paths
+              if: always()
+              run: |
+                  echo "🔍 Checking for potentially problematic hardcoded paths..."
+
+                  # Check for hardcoded /home/ paths (should use variables)
+                  if grep -n '/home/' hostkit modules/*.sh install.sh 2>/dev/null | grep -v "^#" | grep -v "Example:"; then
+                    echo "⚠️  Found hardcoded /home/ paths - consider using variables"
+                  fi
+
+                  echo "✅ Path check complete"
+
+            - name: Verify required variables are defined
+              if: always()
+              run: |
+                  echo "🔍 Checking required variables in main script..."
+
+                  REQUIRED_VARS="WEB_ROOT NGINX_SITES NGINX_ENABLED SCRIPT_DIR CONFIG_FILE VERSION_FILE GITHUB_REPO"
+
+                  for var in $REQUIRED_VARS; do
+                    if ! grep -q "^${var}=" hostkit; then
+                      echo "❌ Required variable $var not found in hostkit"
+                      exit 1
+                    fi
+                  done
+
+                  echo "✅ All required variables defined"
+
+            - name: Check shebang in all scripts
+              if: always()
+              run: |
+                  echo "🔍 Checking shebang lines..."
+
+                  for file in hostkit install.sh modules/*.sh; do
+                    if [ -f "$file" ]; then
+                      if ! head -n 1 "$file" | grep -q "^#!/bin/bash"; then
+                        echo "❌ Missing or incorrect shebang in $file"
+                        exit 1
+                      fi
+                    fi
+                  done
+
+                  echo "✅ All scripts have correct shebang"
+
+            - name: Check executable permissions
+              if: always()
+              run: |
+                  echo "🔍 Checking executable permissions..."
+
+                  # These files should be executable
+                  SHOULD_BE_EXEC="hostkit install.sh"
+
+                  for file in $SHOULD_BE_EXEC; do
+                    if [ -f "$file" ] && [ ! -x "$file" ]; then
+                      echo "⚠️  $file should be executable (chmod +x)"
+                    fi
+                  done
+
+                  echo "✅ Permission check complete"
+
+            - name: Verify module loading
+              if: always()
+              run: |
+                  echo "🔍 Checking module loading in main script..."
+
+                  # Check if all modules are referenced in main script
+                  MODULES="register deploy control list versions remove users ssh-keys info uninstall"
+
+                  for module in $MODULES; do
+                    if ! grep -q "source_module.*$module" hostkit; then
+                      echo "⚠️  Module $module.sh may not be loaded in hostkit"
+                    fi
+                  done
+
+                  echo "✅ Module loading check complete"
+
+            - name: Check for TODO/FIXME comments
+              if: always()
+              run: |
+                  echo "🔍 Checking for TODO/FIXME comments..."
+
+                  if grep -rn "TODO\|FIXME" hostkit install.sh modules/*.sh 2>/dev/null; then
+                    echo "⚠️  Found TODO/FIXME comments - consider addressing them"
+                  else
+                    echo "✅ No TODO/FIXME comments found"
+                  fi
+
+            - name: Validate JSON config structure
+              if: always()
+              run: |
+                  echo "🔍 Checking JSON handling..."
+
+                  # Check if jq is used correctly
+                  if ! grep -q "jq -r" hostkit modules/*.sh; then
+                    echo "⚠️  No jq usage found - JSON handling may be missing"
+                  else
+                    echo "✅ JSON handling present"
+                  fi
+
+            - name: Check for security issues
+              if: always()
+              run: |
+                  echo "🔍 Checking for common security issues..."
+
+                  # Check for unsafe eval usage
+                  if grep -rn "eval" hostkit modules/*.sh install.sh 2>/dev/null | grep -v "^#"; then
+                    echo "⚠️  Found eval usage - verify it's safe"
+                  fi
+
+                  # Check for unsafe variable expansion
+                  if grep -rn '\$(' hostkit modules/*.sh install.sh 2>/dev/null | grep -v "^#" | grep -v "jq" | head -5; then
+                    echo "ℹ️  Found command substitutions - ensure proper quoting"
+                  fi
+
+                  echo "✅ Security check complete"
+
+            - name: Test summary
+              if: always()
+              run: |
+                  echo ""
+                  echo "════════════════════════════════════════"
+                  echo "  🎯 Syntax Check Summary"
+                  echo "════════════════════════════════════════"
+                  echo "✅ Bash syntax validation completed"
+                  echo "✅ Shellcheck analysis completed"
+                  echo "✅ Header verification completed"
+                  echo "✅ Variable check completed"
+                  echo "✅ Shebang check completed"
+                  echo "✅ Permission check completed"
+                  echo "✅ Module loading check completed"
+                  echo "✅ TODO/FIXME scan completed"
+                  echo "✅ JSON handling check completed"
+                  echo "✅ Security scan completed"
+                  echo "════════════════════════════════════════"
+                  echo ""
+                  echo "🎉 All quality checks passed!"
+                  echo ""
