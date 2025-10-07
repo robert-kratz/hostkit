@@ -52,9 +52,27 @@ register_website() {
     print_step "Starting website registration"
     echo ""
     
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║ This wizard will guide you through the registration process:     ║${NC}"
+    echo -e "${CYAN}║                                                                   ║${NC}"
+    echo -e "${CYAN}║ 1. Domain Configuration - Your website's domain name             ║${NC}"
+    echo -e "${CYAN}║ 2. Port Assignment - Internal Docker port mapping                ║${NC}"
+    echo -e "${CYAN}║ 3. User Setup - Dedicated deployment user                        ║${NC}"
+    echo -e "${CYAN}║ 4. Memory Allocation - Resource limits for your container        ║${NC}"
+    echo -e "${CYAN}║ 5. SSL Certificate - Automatic HTTPS configuration               ║${NC}"
+    echo -e "${CYAN}║ 6. SSH Keys - Secure deployment access                           ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
     # Main domain with validation and retry
+    echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}Step 1: Domain Configuration${NC}"
+    echo -e "${CYAN}Enter your main domain name without http:// or https://${NC}"
+    echo -e "${CYAN}Examples: example.com, subdomain.example.com${NC}"
+    echo ""
+    
     local domain
-    domain=$(read_domain_input "Main domain (e.g. example.com)")
+    domain=$(read_domain_input "Main domain")
     if [ $? -ne 0 ]; then
         print_error "Registration cancelled"
         safe_mode_on
@@ -97,6 +115,13 @@ register_website() {
     # Port with validation and conflict detection
     local suggested_port=$(get_next_available_port 3000)
     echo ""
+    echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}Step 2: Port Assignment${NC}"
+    echo -e "${CYAN}Choose the internal port where your Docker container will listen${NC}"
+    echo -e "${CYAN}Nginx will forward external traffic (80/443) to this port${NC}"
+    echo -e "${CYAN}Common ports: 3000 (Node.js), 8080 (Java), 5000 (Python)${NC}"
+    echo ""
+    
     local port
     port=$(read_port_input "Internal container port" "$suggested_port")
     if [ $? -ne 0 ]; then
@@ -107,6 +132,12 @@ register_website() {
     # Username with validation
     local suggested_username="deploy-${domain//./-}"
     echo ""
+    echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}Step 3: User Setup${NC}"
+    echo -e "${CYAN}A dedicated system user will be created for deployments${NC}"
+    echo -e "${CYAN}This user will have restricted SSH access for security${NC}"
+    echo ""
+    
     local username
     username=$(read_username_input "Deployment username" "$suggested_username")
     if [ $? -ne 0 ]; then
@@ -116,7 +147,14 @@ register_website() {
     
     # Memory allocation
     echo ""
-    print_step "Memory Allocation"
+    echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}Step 4: Memory Allocation${NC}"
+    echo -e "${CYAN}Set memory limits to control resource usage${NC}"
+    echo -e "${CYAN}Memory Limit: Maximum RAM the container can use (hard limit)${NC}"
+    echo -e "${CYAN}Memory Reservation: Minimum guaranteed RAM (soft limit)${NC}"
+    echo -e "${CYAN}System reserves 20% RAM for OS (min 512MB, max 2GB)${NC}"
+    echo ""
+    
     source "/opt/hostkit/modules/memory.sh"
     local memory_values=$(select_memory_limit "$domain" "")
     local memory_limit=$(echo "$memory_values" | awk '{print $1}')
@@ -171,11 +209,25 @@ register_website() {
 EOF
     
     # Create SSH user
+    echo ""
+    echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}Step 5: SSH User Setup${NC}"
+    echo -e "${CYAN}Creates a dedicated user with SSH keys for secure deployments${NC}"
+    echo ""
+    
     if ask_yes_no "Create SSH user?"; then
         create_ssh_user "$domain" "$username"
     fi
     
     # Setup SSL certificates
+    echo ""
+    echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}Step 6: SSL Certificate${NC}"
+    echo -e "${CYAN}Automatically request Let's Encrypt SSL certificate for HTTPS${NC}"
+    echo -e "${CYAN}Your domain must already point to this server's IP address${NC}"
+    echo -e "${CYAN}Rate limit: 5 certificates per domain per week${NC}"
+    echo ""
+    
     if ask_yes_no "Setup SSL certificates with Certbot?"; then
         setup_certbot "$domain" "${all_domains[@]}"
     fi
