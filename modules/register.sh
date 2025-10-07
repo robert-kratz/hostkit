@@ -194,17 +194,26 @@ register_website() {
     local redirect_domains=()
     echo ""
     if ask_yes_no "Add redirect domains? (e.g., www.$domain)"; then
+        echo -e "${CYAN}ℹ Enter domains one by one, then press Enter on empty line to continue${NC}"
         while true; do
-            read -p "Redirect domain (or press Enter to finish): " additional_domain
-            additional_domain=$(echo "$additional_domain" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+            read -p "Redirect domain: " -r additional_domain
             
-            [ -z "$additional_domain" ] && break
+            # Trim whitespace and convert to lowercase
+            additional_domain=$(echo "$additional_domain" | xargs 2>/dev/null | tr '[:upper:]' '[:lower:]')
+            
+            # Empty input = done adding domains
+            if [ -z "$additional_domain" ] || [ "$additional_domain" = "" ]; then
+                if [ ${#redirect_domains[@]} -gt 0 ]; then
+                    echo -e "${GREEN}✓ Added ${#redirect_domains[@]} redirect domain(s)${NC}"
+                fi
+                break
+            fi
             
             if validate_domain "$additional_domain" && [ ! -d "$WEB_ROOT/$additional_domain" ]; then
                 redirect_domains+=("$additional_domain")
-                echo -e "${GREEN}✓ Added: $additional_domain${NC}"
+                echo -e "${GREEN}  ✓ Added: $additional_domain${NC}"
             else
-                echo -e "${YELLOW}⚠ Skipped (invalid or already exists)${NC}"
+                echo -e "${YELLOW}  ⚠ Skipped (invalid or already exists)${NC}"
             fi
         done
     fi
