@@ -178,33 +178,36 @@ register_website() {
     # Additional redirect domains with validation
     local redirect_domains=()
     echo ""
-    print_info "You can add additional domains that will redirect to the main domain"
+    print_info "You can add additional domains that will redirect to the main domain" >&2
+    echo ""
     
     if ask_yes_no "Do you want to add redirect domains?"; then
-        echo ""
+        echo "" >&2
         while true; do
-            echo -ne "${CYAN}Additional domain (or Enter to finish): ${NC}"
+            echo -ne "${CYAN}Additional domain (press Enter to finish): ${NC}" >&2
             read -r additional_domain
             
+            # Check for empty input to exit loop
             if [ -z "$additional_domain" ]; then
+                print_info "Finished adding redirect domains" >&2
                 break
             fi
             
             # Validate additional domain
             if ! validate_domain "$additional_domain"; then
-                print_error "Invalid domain format: $additional_domain"
-                print_info "Please use a valid domain format like: subdomain.example.com"
+                print_error "Invalid domain format: $additional_domain" >&2
+                print_info "Please use a valid domain format like: subdomain.example.com" >&2
                 continue
             fi
             
             # Check if additional domain already exists
             if [ -d "$WEB_ROOT/$additional_domain" ]; then
-                print_warning "Domain $additional_domain is already registered, skipping"
+                print_warning "Domain $additional_domain is already registered, skipping" >&2
                 continue
             fi
             
             redirect_domains+=("$additional_domain")
-            print_success "Added: $additional_domain"
+            print_success "Added: $additional_domain" >&2
         done
     fi
     
@@ -256,17 +259,17 @@ register_website() {
     local memory_limit=$(echo "$memory_values" | awk '{print $1}')
     local memory_reservation=$(echo "$memory_values" | awk '{print $2}')
     
-    echo ""
-    print_info "Registering website with the following configuration:"
-    echo -e "  ${WHITE}Main domain:${NC} $domain"
+    echo "" >&2
+    echo -e "${CYAN}ℹ Registering website with the following configuration:${NC}" >&2
+    echo -e "  ${WHITE}Main domain:${NC} $domain" >&2
     if [ ${#redirect_domains[@]} -gt 0 ]; then
-        echo -e "  ${WHITE}Redirect domains:${NC} ${redirect_domains[*]}"
+        echo -e "  ${WHITE}Redirect domains:${NC} ${redirect_domains[*]}" >&2
     fi
-    echo -e "  ${WHITE}Port:${NC} $port"
-    echo -e "  ${WHITE}Username:${NC} $username"
-    echo -e "  ${WHITE}Memory Limit:${NC} $memory_limit"
-    echo -e "  ${WHITE}Memory Reservation:${NC} $memory_reservation"
-    echo ""
+    echo -e "  ${WHITE}Port:${NC} $port" >&2
+    echo -e "  ${WHITE}Username:${NC} $username" >&2
+    echo -e "  ${WHITE}Memory Limit:${NC} $memory_limit" >&2
+    echo -e "  ${WHITE}Memory Reservation:${NC} $memory_reservation" >&2
+    echo "" >&2
     
     if ! ask_yes_no "Continue?"; then
         print_warning "Registration cancelled"
