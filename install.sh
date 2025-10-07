@@ -75,7 +75,7 @@ install_dependencies() {
         DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq docker-buildx-plugin 2>/dev/null || true
     fi
     
-    local packages=("docker.io" "nginx" "certbot" "python3-certbot-nginx" "jq" "curl" "bc")
+    local packages=("docker.io" "nginx" "certbot" "python3-certbot-nginx" "jq" "curl")
     local to_install=()
     
     for package in "${packages[@]}"; do
