@@ -1,0 +1,196 @@
+#!/bin/bash
+
+# hostkit bash completion script
+# 
+# Copyright (c) 2025 Robert Julian Kratz
+# https://github.com/robert-kratz/hostkit
+# 
+# Licensed under the MIT License
+
+_hostkit_completion() {
+    local cur prev words cword
+    _init_completion || return
+
+    # Available commands
+    local commands="register list info start stop restart deploy versions switch logs remove ssl-status ssl-renew list-users show-keys regenerate-keys user-info list-keys add-key show-key remove-key update uninstall version help"
+    
+    case "${prev}" in
+        hostkit)
+            COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
+            return 0
+            ;;
+        info|start|stop|restart|logs|remove|deploy|versions|switch|show-keys|regenerate-keys|list-keys|add-key|show-key|remove-key)
+            # Complete with available domains and IDs
+            local domains=""
+            local ids=""
+            if [ -d "/opt/domains" ]; then
+                domains=$(find /opt/domains -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep -v "^domains$" | tr '\n' ' ')
+                # Generate ID list
+                local count=$(echo "$domains" | wc -w | tr -d ' ')
+                if [ "$count" -gt 0 ]; then
+                    ids=$(seq 0 $((count - 1)) | tr '\n' ' ')
+                fi
+            fi
+            COMPREPLY=($(compgen -W "${domains} ${ids}" -- "${cur}"))
+            return 0
+            ;;
+        deploy)
+            case "${cword}" in
+                2)
+                    # First argument: domain
+                    local domains=""
+                    if [ -d "/opt/domains" ]; then
+                        domains=$(find /opt/domains -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep -v "^domains$" | tr '\n' ' ')
+                    fi
+                    COMPREPLY=($(compgen -W "${domains}" -- "${cur}"))
+                    return 0
+                    ;;
+                3)
+                    # Second argument: tar file
+                    COMPREPLY=($(compgen -f -X "!*.tar" -- "${cur}"))
+                    return 0
+                    ;;
+            esac
+            ;;
+        logs)
+            case "${cword}" in
+                2)
+                    # First argument: domain
+                    local domains=""
+                    if [ -d "/opt/domains" ]; then
+                        domains=$(find /opt/domains -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep -v "^domains$" | tr '\n' ' ')
+                    fi
+                    COMPREPLY=($(compgen -W "${domains}" -- "${cur}"))
+                    return 0
+                    ;;
+                3)
+                    # Second argument: number of lines or -f flag
+                    COMPREPLY=($(compgen -W "-f 10 50 100 500 1000" -- "${cur}"))
+                    return 0
+                    ;;
+            esac
+            ;;
+        switch)
+            case "${cword}" in
+                2)
+                    # First argument: domain
+                    local domains=""
+                    if [ -d "/opt/domains" ]; then
+                        domains=$(find /opt/domains -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep -v "^domains$" | tr '\n' ' ')
+                    fi
+                    COMPREPLY=($(compgen -W "${domains}" -- "${cur}"))
+                    return 0
+                    ;;
+                3)
+                    # Second argument: version (would need to read available versions)
+                    # For now, just complete with common patterns
+                    COMPREPLY=($(compgen -W "latest" -- "${cur}"))
+                    return 0
+                    ;;
+            esac
+            ;;
+        add-key)
+            case "${cword}" in
+                2)
+                    # First argument: domain or ID
+                    local domains=""
+                    local ids=""
+                    if [ -d "/opt/domains" ]; then
+                        domains=$(find /opt/domains -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep -v "^domains$" | tr '\n' ' ')
+                        local count=$(echo "$domains" | wc -w | tr -d ' ')
+                        if [ "$count" -gt 0 ]; then
+                            ids=$(seq 0 $((count - 1)) | tr '\n' ' ')
+                        fi
+                    fi
+                    COMPREPLY=($(compgen -W "${domains} ${ids}" -- "${cur}"))
+                    return 0
+                    ;;
+                3)
+                    # Second argument: key name (no completion, user types freely)
+                    return 0
+                    ;;
+            esac
+            ;;
+        show-key|remove-key)
+            case "${cword}" in
+                2)
+                    # First argument: domain or ID
+                    local domains=""
+                    local ids=""
+                    if [ -d "/opt/domains" ]; then
+                        domains=$(find /opt/domains -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep -v "^domains$" | tr '\n' ' ')
+                        local count=$(echo "$domains" | wc -w | tr -d ' ')
+                        if [ "$count" -gt 0 ]; then
+                            ids=$(seq 0 $((count - 1)) | tr '\n' ' ')
+                        fi
+                    fi
+                    COMPREPLY=($(compgen -W "${domains} ${ids}" -- "${cur}"))
+                    return 0
+                    ;;
+                3)
+                    # Second argument: existing key names for the domain
+                    local domain_input="${words[2]}"
+                    local key_names=""
+                    
+                    # Try to resolve domain from input (could be ID or domain name)
+                    if [ -d "/opt/domains" ]; then
+                        local domains_list=($(find /opt/domains -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep -v "^domains$" | sort))
+                        local domain=""
+                        
+                        # Check if input is numeric (ID)
+                        if [[ "$domain_input" =~ ^[0-9]+$ ]]; then
+                            if [ "$domain_input" -lt "${#domains_list[@]}" ]; then
+                                domain="${domains_list[$domain_input]}"
+                            fi
+                        else
+                            domain="$domain_input"
+                        fi
+                        
+                        # Get key names from domain's keys directory
+                        if [ -n "$domain" ] && [ -d "/opt/domains/$domain/.ssh/keys" ]; then
+                            # Extract unique key names from key files
+                            local key_files=()
+                            shopt -s nullglob
+                            key_files=(/opt/domains/$domain/.ssh/keys/key-*.pub)
+                            shopt -u nullglob
+                            
+                            for pub_key in "${key_files[@]}"; do
+                                if [ -f "$pub_key" ]; then
+                                    local basename=$(basename "$pub_key")
+                                    local key_name=$(echo "$basename" | sed -E 's/key-(.+)\.(rsa|ed25519)\.pub/\1/')
+                                    if [[ ! " ${key_names} " =~ " ${key_name} " ]]; then
+                                        key_names="${key_names} ${key_name}"
+                                    fi
+                                fi
+                            done
+                        fi
+                    fi
+                    
+                    COMPREPLY=($(compgen -W "${key_names}" -- "${cur}"))
+                    return 0
+                    ;;
+            esac
+            ;;
+        ssl-status|ssl-renew)
+            # Complete with domains or 'all'
+            local domains="all"
+            if [ -d "/opt/domains" ]; then
+                domains="${domains} $(find /opt/domains -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep -v "^domains$" | tr '\n' ' ')"
+            fi
+            COMPREPLY=($(compgen -W "${domains}" -- "${cur}"))
+            return 0
+            ;;
+        uninstall)
+            # Complete with uninstall presets
+            COMPREPLY=($(compgen -W "minimal standard complete nuclear custom" -- "${cur}"))
+            return 0
+            ;;
+    esac
+
+    # Default: complete with commands
+    COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
+    return 0
+}
+
+# Register the completion function
+complete -F _hostkit_completion hostkit

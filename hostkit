@@ -1,0 +1,1063 @@
+#!/bin/bash
+
+# hostkit - Main Script
+# Version 1.2.0
+# 
+# Copyright (c) 2025 Robert Julian Kratz
+# https://github.com/robert-kratz/hostkit
+# 
+# Licensed under the MIT License
+
+set -e
+
+# Colors for better UX
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+NC='\033[0m' # No Color
+
+# Basic Configuration
+WEB_ROOT="/opt/domains"
+NGINX_SITES="/etc/nginx/sites-available"
+NGINX_ENABLED="/etc/nginx/sites-enabled"
+SCRIPT_DIR="/opt/hostkit"
+CONFIG_FILE="$SCRIPT_DIR/config.json"
+VERSION_FILE="$SCRIPT_DIR/VERSION"
+GITHUB_REPO="robert-kratz/hostkit"
+VERSION_CHECK_FILE="$SCRIPT_DIR/.last_version_check"
+
+# Banner
+show_banner() {
+    echo -e "${CYAN}"
+    echo "╔═══════════════════════════════════════╗"
+    echo "║        HOSTKIT v1.2.0                 ║"
+    echo "║   VPS Website Management Tool         ║"
+    echo "╚═══════════════════════════════════════╝"
+    echo -e "${NC}"
+}
+
+# Helper Functions
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}✗ $1${NC}"
+}
+
+print_info() {
+    echo -e "${BLUE}ℹ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+print_step() {
+    echo -e "${MAGENTA}➜ $1${NC}"
+}
+
+ask_yes_no() {
+    local prompt="$1"
+    local default="${2:-y}"
+    
+    if [ "$default" = "y" ]; then
+        echo -ne "${YELLOW}${prompt} [Y/n]: ${NC}"
+    else
+        echo -ne "${YELLOW}${prompt} [y/N]: ${NC}"
+    fi
+    
+    read -r response
+    response=${response:-$default}
+    
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Error handling helpers
+safe_mode_on() {
+    set -e
+}
+
+safe_mode_off() {
+    set +e
+}
+
+# Input Validation Functions
+validate_domain() {
+    local domain="$1"
+    
+    # Check if empty
+    if [ -z "$domain" ]; then
+        return 1
+    fi
+    
+    # Check basic domain format
+    if [[ ! "$domain" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$ ]]; then
+        return 1
+    fi
+    
+    # Check for consecutive dots or hyphens
+    if [[ "$domain" =~ \.{2,} ]] || [[ "$domain" =~ \-{2,} ]]; then
+        return 1
+    fi
+    
+    # Check length
+    if [ ${#domain} -gt 253 ]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+validate_port() {
+    local port="$1"
+    
+    # Check if empty
+    if [ -z "$port" ]; then
+        return 1
+    fi
+    
+    # Check if numeric
+    if ! [[ "$port" =~ ^[0-9]+$ ]]; then
+        return 1
+    fi
+    
+    # Check range (1-65535, but avoid system ports 1-1023)
+    if [ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+validate_username() {
+    local username="$1"
+    
+    # Check if empty
+    if [ -z "$username" ]; then
+        return 1
+    fi
+    
+    # Check username format (lowercase letters, numbers, hyphens, underscores)
+    if [[ ! "$username" =~ ^[a-z][a-z0-9_-]*$ ]]; then
+        return 1
+    fi
+    
+    # Check length
+    if [ ${#username} -gt 32 ]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+validate_tar_file() {
+    local tar_file="$1"
+    
+    # Check if empty
+    if [ -z "$tar_file" ]; then
+        return 1
+    fi
+    
+    # Check if file exists
+    if [ ! -f "$tar_file" ]; then
+        return 1
+    fi
+    
+    # Check if readable
+    if [ ! -r "$tar_file" ]; then
+        return 1
+    fi
+    
+    # Check file extension
+    if [[ ! "$tar_file" =~ \.tar$ ]]; then
+        return 1
+    fi
+    
+    # Basic TAR validation
+    if ! tar -tf "$tar_file" >/dev/null 2>&1; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# Get list of registered domains
+get_registered_domains() {
+    if [ -d "$WEB_ROOT" ]; then
+        find "$WEB_ROOT" -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep -v "^domains$" | sort
+    fi
+}
+
+# Get list of domains with IDs (format: ID|domain)
+get_domains_with_ids() {
+    local domains=($(get_registered_domains))
+    local id=0
+    for domain in "${domains[@]}"; do
+        echo "$id|$domain"
+        ((id++))
+    done
+}
+
+# Resolve domain from ID or name
+resolve_domain() {
+    local input="$1"
+    
+    # If empty, return error
+    if [ -z "$input" ]; then
+        return 1
+    fi
+    
+    # If it's a number, treat as ID
+    if [[ "$input" =~ ^[0-9]+$ ]]; then
+        local domains=($(get_registered_domains))
+        if [ "$input" -lt "${#domains[@]}" ]; then
+            echo "${domains[$input]}"
+            return 0
+        else
+            return 1
+        fi
+    fi
+    
+    # Otherwise treat as domain name
+    if [ -d "$WEB_ROOT/$input" ]; then
+        echo "$input"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Get domain ID
+get_domain_id() {
+    local search_domain="$1"
+    local domains=($(get_registered_domains))
+    local id=0
+    
+    for domain in "${domains[@]}"; do
+        if [ "$domain" = "$search_domain" ]; then
+            echo "$id"
+            return 0
+        fi
+        ((id++))
+    done
+    
+    return 1
+}
+
+# Get SSL certificate days until expiry
+get_ssl_days_until_expiry() {
+    local domain="$1"
+    
+    if [ ! -f "/etc/letsencrypt/live/$domain/cert.pem" ]; then
+        echo "N/A"
+        return 1
+    fi
+    
+    local expiry_date=$(openssl x509 -enddate -noout -in "/etc/letsencrypt/live/$domain/cert.pem" 2>/dev/null | cut -d= -f2)
+    if [ -z "$expiry_date" ]; then
+        echo "N/A"
+        return 1
+    fi
+    
+    local expiry_epoch=$(date -j -f "%b %d %T %Y %Z" "$expiry_date" +%s 2>/dev/null || date -d "$expiry_date" +%s 2>/dev/null)
+    local current_epoch=$(date +%s)
+    local days=$(( (expiry_epoch - current_epoch) / 86400 ))
+    
+    echo "$days"
+    return 0
+}
+
+# Get SSL certificate status (valid/expired/missing)
+get_ssl_status() {
+    local domain="$1"
+    
+    if [ ! -f "/etc/letsencrypt/live/$domain/cert.pem" ]; then
+        echo "missing"
+        return 1
+    fi
+    
+    local days=$(get_ssl_days_until_expiry "$domain")
+    if [ "$days" = "N/A" ]; then
+        echo "error"
+        return 1
+    fi
+    
+    if [ "$days" -lt 0 ]; then
+        echo "expired"
+        return 1
+    elif [ "$days" -lt 7 ]; then
+        echo "expiring"
+        return 0
+    else
+        echo "valid"
+        return 0
+    fi
+}
+
+# Safe input functions with retry logic
+read_domain_input() {
+    local prompt="$1"
+    local domain=""
+    
+    while true; do
+        echo -ne "${CYAN}${prompt}: ${NC}"
+        read -r domain
+        
+        if [ -z "$domain" ]; then
+            print_error "Domain cannot be empty"
+            continue
+        fi
+        
+        if ! validate_domain "$domain"; then
+            print_error "Invalid domain format. Use format like: example.com"
+            print_info "Domain must:"
+            echo "  - Start and end with alphanumeric characters"
+            echo "  - Contain only letters, numbers, dots, and hyphens"
+            echo "  - Not have consecutive dots or hyphens"
+            echo "  - Be less than 254 characters"
+            continue
+        fi
+        
+        # Check if domain already exists
+        if [ -d "$WEB_ROOT/$domain" ]; then
+            print_error "Domain $domain is already registered"
+            if ask_yes_no "Try a different domain?"; then
+                continue
+            else
+                return 1
+            fi
+        fi
+        
+        echo "$domain"
+        return 0
+    done
+}
+
+read_port_input() {
+    local prompt="$1"
+    local suggested_port="$2"
+    local port=""
+    
+    while true; do
+        echo -ne "${CYAN}${prompt} (suggested: $suggested_port): ${NC}"
+        read -r port
+        port=${port:-$suggested_port}
+        
+        if ! validate_port "$port"; then
+            print_error "Invalid port number. Must be between 1024-65535"
+            continue
+        fi
+        
+        # Check for port conflicts
+        if ! check_port_conflict "$port" ""; then
+            print_error "Port $port is already in use by another website"
+            local next_port=$(get_next_available_port $((port + 1)))
+            print_info "Next available port: $next_port"
+            if ask_yes_no "Use port $next_port instead?"; then
+                echo "$next_port"
+                return 0
+            fi
+            continue
+        fi
+        
+        echo "$port"
+        return 0
+    done
+}
+
+read_username_input() {
+    local prompt="$1"
+    local suggested_username="$2"
+    local username=""
+    
+    while true; do
+        echo -ne "${CYAN}${prompt} (Enter for $suggested_username): ${NC}"
+        read -r username
+        username=${username:-$suggested_username}
+        
+        if ! validate_username "$username"; then
+            print_error "Invalid username format"
+            print_info "Username must:"
+            echo "  - Start with a lowercase letter"
+            echo "  - Contain only lowercase letters, numbers, hyphens, underscores"
+            echo "  - Be less than 33 characters"
+            continue
+        fi
+        
+        # Check if user already exists
+        if id "$username" &>/dev/null; then
+            print_error "User $username already exists"
+            if ask_yes_no "Try a different username?"; then
+                continue
+            else
+                return 1
+            fi
+        fi
+        
+        echo "$username"
+        return 0
+    done
+}
+
+# Version Management
+get_current_version() {
+    if [ -f "$VERSION_FILE" ]; then
+        cat "$VERSION_FILE"
+    else
+        echo "1.0.0"
+    fi
+}
+
+get_latest_version() {
+    local latest_version
+    
+    # Try to get version from VERSION file on main branch (most accurate)
+    latest_version=$(curl -s -f "https://raw.githubusercontent.com/$GITHUB_REPO/main/VERSION" 2>/dev/null | tr -d '\n\r ')
+    
+    # Fallback 1: Check latest release
+    if [ -z "$latest_version" ] || [ "$latest_version" = "null" ] || [ "$latest_version" = "404: Not Found" ]; then
+        latest_version=$(curl -s "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/^v//')
+    fi
+    
+    # Fallback 2: Check latest tag
+    if [ -z "$latest_version" ] || [ "$latest_version" = "null" ]; then
+        latest_version=$(curl -s "https://api.github.com/repos/$GITHUB_REPO/tags" | grep '"name":' | head -1 | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/^v//')
+    fi
+    
+    echo "$latest_version"
+}
+
+get_latest_release_notes() {
+    local notes
+    notes=$(curl -s "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | grep -A 100 '"body":' | sed -n '/"body":/,/"created_at":/p' | sed '1d;$d' | sed 's/^[[:space:]]*"//' | sed 's/"[[:space:]]*$//' | head -10)
+    echo "$notes"
+}
+
+version_compare() {
+    local version1="$1"
+    local version2="$2"
+    
+    # Split versions into arrays
+    IFS='.' read -ra V1 <<< "$version1"
+    IFS='.' read -ra V2 <<< "$version2"
+    
+    # Compare each part
+    for i in {0..2}; do
+        local v1_part=${V1[i]:-0}
+        local v2_part=${V2[i]:-0}
+        
+        if [ "$v1_part" -lt "$v2_part" ]; then
+            return 1  # version1 < version2
+        elif [ "$v1_part" -gt "$v2_part" ]; then
+            return 2  # version1 > version2
+        fi
+    done
+    
+    return 0  # versions are equal
+}
+
+should_check_version() {
+    # Check once per day
+    if [ ! -f "$VERSION_CHECK_FILE" ]; then
+        return 0
+    fi
+    
+    local last_check=$(cat "$VERSION_CHECK_FILE" 2>/dev/null || echo "0")
+    local current_time=$(date +%s)
+    local day_in_seconds=86400
+    
+    if [ $((current_time - last_check)) -gt $day_in_seconds ]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+check_for_updates() {
+    if ! should_check_version; then
+        return
+    fi
+    
+    local current_version=$(get_current_version)
+    local latest_version=$(get_latest_version)
+    
+    # Save current timestamp
+    date +%s > "$VERSION_CHECK_FILE"
+    
+    if [ -n "$latest_version" ] && [ "$latest_version" != "null" ]; then
+        version_compare "$current_version" "$latest_version"
+        local result=$?
+        
+        if [ $result -eq 1 ]; then
+            echo ""
+            echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${YELLOW}║${NC}  ${RED}⚠️  UPDATE AVAILABLE${NC}                                     ${YELLOW}║${NC}"
+            echo -e "${YELLOW}╠═══════════════════════════════════════════════════════════╣${NC}"
+            echo -e "${YELLOW}║${NC}  Current Version: ${RED}v$current_version${NC}                               ${YELLOW}║${NC}"
+            echo -e "${YELLOW}║${NC}  New Version:     ${GREEN}v$latest_version${NC}                               ${YELLOW}║${NC}"
+            echo -e "${YELLOW}╠═══════════════════════════════════════════════════════════╣${NC}"
+            echo -e "${YELLOW}║${NC}  ${WHITE}Install Update:${NC}                                       ${YELLOW}║${NC}"
+            echo -e "${YELLOW}║${NC}  ${CYAN}$ sudo hostkit update${NC}                                 ${YELLOW}║${NC}"
+            echo -e "${YELLOW}║${NC}                                                         ${YELLOW}║${NC}"
+            echo -e "${YELLOW}║${NC}  ${WHITE}More Info:${NC}                                            ${YELLOW}║${NC}"
+            echo -e "${YELLOW}║${NC}  ${CYAN}https://github.com/$GITHUB_REPO/releases/latest${NC}${YELLOW}║${NC}"
+            echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════╝${NC}"
+            echo ""
+        fi
+    fi
+}
+
+update_hostkit() {
+    print_step "Checking for updates..."
+    
+    local current_version=$(get_current_version)
+    local latest_version=$(get_latest_version)
+    
+    if [ -z "$latest_version" ] || [ "$latest_version" = "null" ]; then
+        print_error "Cannot retrieve the latest version. Check your internet connection."
+        return 1
+    fi
+    
+    version_compare "$current_version" "$latest_version"
+    local result=$?
+    
+    if [ $result -eq 0 ]; then
+        print_success "You are already using the latest version (v$current_version)"
+        echo ""
+        echo -e "${WHITE}Check for new features:${NC}"
+        echo -e "  ${CYAN}https://github.com/$GITHUB_REPO/releases${NC}"
+        return 0
+    elif [ $result -eq 2 ]; then
+        print_warning "You are using a newer version than published!"
+        echo ""
+        echo -e "${WHITE}Your version:${NC}    v$current_version"
+        echo -e "${WHITE}Latest release:${NC} v$latest_version"
+        echo ""
+        print_info "You may be using a development version."
+        return 0
+    fi
+    
+    echo ""
+    echo -e "${WHITE}╔════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${WHITE}║${NC}  ${GREEN}📦 Update Available${NC}                                          ${WHITE}║${NC}"
+    echo -e "${WHITE}╠════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${WHITE}║${NC}  Current: ${RED}v$current_version${NC}  →  New: ${GREEN}v$latest_version${NC}                         ${WHITE}║${NC}"
+    echo -e "${WHITE}╚════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    # Show release notes if available
+    local release_notes=$(get_latest_release_notes)
+    if [ -n "$release_notes" ]; then
+        echo -e "${WHITE}What's new:${NC}"
+        echo "$release_notes" | head -5 | sed 's/^/  /'
+        echo ""
+    fi
+    
+    if ! ask_yes_no "Do you want to update now?"; then
+        print_info "Update cancelled"
+        return 0
+    fi
+    
+    print_step "Downloading the latest version..."
+    
+    local temp_dir=$(mktemp -d)
+    local download_url="https://github.com/$GITHUB_REPO/archive/refs/heads/main.zip"
+    
+    if ! curl -L "$download_url" -o "$temp_dir/hostkit.zip"; then
+        print_error "Download failed"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+    
+    print_step "Extracting update..."
+    if ! unzip -q "$temp_dir/hostkit.zip" -d "$temp_dir"; then
+        print_error "Extraction failed"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+    
+    print_step "Installing update..."
+    
+    # Backup current installation
+    local backup_dir="$SCRIPT_DIR/backup-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$backup_dir"
+    cp -r "$SCRIPT_DIR"/* "$backup_dir/" 2>/dev/null || true
+    
+    # Install new version
+    local source_dir="$temp_dir/hostkit-main"
+    
+    # Copy new files
+    cp "$source_dir/hostkit" /usr/local/bin/hostkit
+    chmod +x /usr/local/bin/hostkit
+    
+    # Copy scripts
+    for script in control.sh deploy.sh install.sh list.sh register.sh remove.sh versions.sh; do
+        if [ -f "$source_dir/$script" ]; then
+            cp "$source_dir/$script" "$SCRIPT_DIR/"
+            chmod +x "$SCRIPT_DIR/$script"
+        fi
+    done
+    
+    # Update version file
+    if [ -f "$source_dir/VERSION" ]; then
+        cp "$source_dir/VERSION" "$VERSION_FILE"
+    else
+        echo "$latest_version" > "$VERSION_FILE"
+    fi
+    
+    # Cleanup
+    rm -rf "$temp_dir"
+    
+    # Update version check timestamp
+    date +%s > "$VERSION_CHECK_FILE"
+    
+    print_success "Update successful! New version: v$latest_version"
+    print_info "Backup saved in: $backup_dir"
+}
+
+# SSL Certificate Management Commands
+show_ssl_status() {
+    local domain="$1"
+    
+    if [ -z "$domain" ]; then
+        # Show status for all domains
+        print_step "SSL Certificate Status for All Domains"
+        echo ""
+        
+        if [ -d "$WEB_ROOT" ]; then
+            local found_domains=false
+            for domain_dir in "$WEB_ROOT"/*; do
+                if [ -d "$domain_dir" ]; then
+                    local domain_name=$(basename "$domain_dir")
+                    found_domains=true
+                    show_ssl_status_for_domain "$domain_name"
+                    echo ""
+                fi
+            done
+            
+            if [ "$found_domains" = false ]; then
+                print_warning "No domains registered"
+            fi
+        else
+            print_warning "No domains directory found"
+        fi
+    else
+        # Show status for specific domain
+        if [ ! -d "$WEB_ROOT/$domain" ]; then
+            print_error "Domain $domain is not registered"
+            exit 1
+        fi
+        
+        show_ssl_status_for_domain "$domain"
+    fi
+}
+
+show_ssl_status_for_domain() {
+    local domain="$1"
+    
+    echo -e "${WHITE}Domain: $domain${NC}"
+    
+    if check_certificate_exists "$domain"; then
+        local days_left=$(days_until_expiry "$domain")
+        local expiry_date=$(get_certificate_expiry "$domain")
+        
+        if [ $days_left -gt 30 ]; then
+            print_success "Certificate valid for $days_left days (expires: $expiry_date)"
+        elif [ $days_left -gt 7 ]; then
+            print_warning "Certificate expires in $days_left days (expires: $expiry_date)"
+        else
+            print_error "Certificate expires in $days_left days (expires: $expiry_date) - RENEWAL NEEDED"
+        fi
+        
+        # Show certificate domains
+        local cert_domains=$(openssl x509 -in "/etc/letsencrypt/live/$domain/fullchain.pem" -text -noout | grep -A 1 "Subject Alternative Name" | tail -1 | tr ',' '\n' | sed 's/.*DNS://g' | tr -d ' ' | sort)
+        local cert_subject=$(openssl x509 -in "/etc/letsencrypt/live/$domain/fullchain.pem" -subject -noout | sed 's/.*CN=//g' | sed 's/,.*//g')
+        
+        echo -e "  ${CYAN}Certificate covers:${NC}"
+        echo "    - $cert_subject"
+        while IFS= read -r cert_domain; do
+            if [ -n "$cert_domain" ] && [ "$cert_domain" != "$cert_subject" ]; then
+                echo "    - $cert_domain"
+            fi
+        done <<< "$cert_domains"
+        
+    else
+        print_error "No certificate found"
+    fi
+}
+
+renew_ssl_certificates() {
+    local domain="$1"
+    
+    if [ -z "$domain" ]; then
+        print_step "Renewing all SSL certificates..."
+        if certbot renew --non-interactive; then
+            print_success "Certificate renewal completed"
+            systemctl reload nginx 2>/dev/null || true
+        else
+            print_error "Certificate renewal failed"
+        fi
+    else
+        if [ ! -d "$WEB_ROOT/$domain" ]; then
+            print_error "Domain $domain is not registered"
+            exit 1
+        fi
+        
+        if ! check_certificate_exists "$domain"; then
+            print_error "No certificate found for $domain"
+            print_info "Use 'hostkit register' to create a new certificate"
+            exit 1
+        fi
+        
+        print_step "Renewing SSL certificate for $domain..."
+        if certbot renew --cert-name "$domain" --non-interactive; then
+            print_success "Certificate renewal completed for $domain"
+            systemctl reload nginx 2>/dev/null || true
+        else
+            print_error "Certificate renewal failed for $domain"
+        fi
+    fi
+}
+
+# Check Root Privileges
+check_root() {
+    if [ "$EUID" -ne 0 ]; then 
+        print_error "This script must be run as root"
+        exit 1
+    fi
+}
+
+# Initialize Directories
+init_directories() {
+    mkdir -p "$WEB_ROOT"
+    mkdir -p "$SCRIPT_DIR"
+    mkdir -p "$NGINX_SITES"
+    mkdir -p "$NGINX_ENABLED"
+    
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "[]" > "$CONFIG_FILE"
+    fi
+}
+
+# Load Domain Configuration
+load_domain_config() {
+    local domain="$1"
+    if [ -f "$WEB_ROOT/$domain/config.json" ]; then
+        cat "$WEB_ROOT/$domain/config.json"
+    else
+        echo "{}"
+    fi
+}
+
+# Save Domain Configuration
+save_domain_config() {
+    local domain="$1"
+    local config="$2"
+    echo "$config" > "$WEB_ROOT/$domain/config.json"
+}
+
+# Show Help
+show_help() {
+    echo -e "${WHITE}HostKit v$(get_current_version) - VPS Website Management Tool${NC}"
+    echo ""
+    echo -e "${WHITE}Usage:${NC}"
+    echo "  hostkit [COMMAND] [OPTIONS]"
+    echo ""
+    echo -e "${WHITE}WEBSITE MANAGEMENT:${NC}"
+    echo -e "  ${GREEN}register${NC}                  Register a new website with guided setup"
+    echo -e "                              Creates SSH user, configures Nginx, sets up SSL"
+    echo -e "  ${GREEN}list${NC}                      List all registered websites with status"
+    echo -e "                              Shows ID, domain, status, SSL, version"
+    echo -e "  ${GREEN}info${NC} <domain|id>          Show detailed information about a website"
+    echo -e "                              Displays container status, SSL info, versions, etc."
+    echo -e "  ${GREEN}remove${NC} <domain|id>        Remove a website and all its data"
+    echo -e "                              Removes containers, configs, SSH users, SSL certs"
+    echo ""
+    echo -e "${WHITE}CONTAINER CONTROL:${NC}"
+    echo -e "  ${GREEN}start${NC} <domain|id>         Start a website container"
+    echo -e "  ${GREEN}stop${NC} <domain|id>          Stop a website container"
+    echo -e "  ${GREEN}restart${NC} <domain|id>       Restart a website container"
+    echo -e "  ${GREEN}logs${NC} <domain|id> [lines]  Show container logs (default: 50 lines)"
+    echo -e "                              Use 'logs <domain|id> -f' to follow logs in real-time"
+    echo ""
+    echo -e "${WHITE}DEPLOYMENT & VERSIONS:${NC}"
+    echo -e "  ${GREEN}deploy${NC} <domain|id> [tar]   Deploy new version from TAR file"
+    echo -e "                              Uses latest TAR from deploy folder if not specified"
+    echo -e "  ${GREEN}versions${NC} <domain|id>       Show all available versions for a website"
+    echo -e "  ${GREEN}switch${NC} <domain|id> <ver>   Switch to a specific version"
+    echo -e "                              Supports rollback to previous versions"
+    echo ""
+    echo -e "${WHITE}SSL CERTIFICATE MANAGEMENT:${NC}"
+    echo -e "  ${GREEN}ssl-status${NC} [domain]        Show SSL certificate status and expiry"
+    echo -e "                              Use 'ssl-status all' for all domains"
+    echo -e "  ${GREEN}ssl-renew${NC} [domain]         Renew SSL certificates"
+    echo -e "                              Use 'ssl-renew all' for all domains"
+    echo ""
+    echo -e "${WHITE}USER & SSH KEY MANAGEMENT:${NC}"
+    echo -e "  ${GREEN}list-users${NC}                List all deployment users with SSH key status"
+    echo -e "  ${GREEN}show-keys${NC} <domain|id>      Show SSH keys for a website with copy commands"
+    echo -e "  ${GREEN}regenerate-keys${NC} <domain|id> Generate new SSH keys for a website"
+    echo -e "                              Creates new RSA 4096-bit + Ed25519 keys"
+    echo -e "  ${GREEN}user-info${NC} <username>       Show detailed information about a user"
+    echo ""
+    echo -e "${WHITE}ADDITIONAL SSH KEY MANAGEMENT:${NC}"
+    echo -e "  ${GREEN}list-keys${NC} <domain|id>      List all SSH keys for a website"
+    echo -e "                              Shows RSA, Ed25519 status and creation date"
+    echo -e "  ${GREEN}add-key${NC} <domain|id> <name> Create a new SSH key for a website"
+    echo -e "                              Generates both RSA and Ed25519 keys"
+    echo -e "  ${GREEN}show-key${NC} <domain|id> <name> Display SSH key content for copying"
+    echo -e "                              Includes instructions for GitHub Actions"
+    echo -e "  ${GREEN}remove-key${NC} <domain|id> <name> Remove an SSH key from a website"
+    echo -e "                              Removes from authorized_keys automatically"
+    echo ""
+    echo -e "${WHITE}SYSTEM:${NC}"
+    echo -e "  ${GREEN}update${NC}                     Update HostKit to the latest version"
+    echo -e "  ${GREEN}uninstall${NC}                  Uninstall HostKit with selective component removal"
+    echo -e "                              Choose what to remove: package, websites, SSL, etc."
+    echo -e "  ${GREEN}version${NC}                    Show current version"
+    echo -e "  ${GREEN}help${NC}                       Show this help message"
+    echo ""
+    echo -e "${WHITE}EXAMPLES:${NC}"
+    echo -e "  ${CYAN}# List all websites (shows IDs)${NC}"
+    echo "  hostkit list"
+    echo ""
+    echo -e "  ${CYAN}# Get detailed information about a website${NC}"
+    echo "  hostkit info example.com    # or: hostkit info 0"
+    echo ""
+    echo -e "  ${CYAN}# Start website using ID${NC}"
+    echo "  hostkit start 0"
+    echo ""
+    echo -e "  ${CYAN}# Deploy using domain name${NC}"
+    echo "  hostkit deploy example.com /tmp/image.tar"
+    echo ""
+    echo -e "  ${CYAN}# Monitor logs using ID${NC}"
+    echo "  hostkit logs 0 -f"
+    echo ""
+    echo -e "  ${CYAN}# Show SSH keys using ID${NC}"
+    echo "  hostkit show-keys 0"
+    echo ""
+    echo -e "${WHITE}NOTES:${NC}"
+    echo -e "  • Use ${YELLOW}domain names or IDs${NC} for all commands"
+    echo -e "  • Use ${YELLOW}Tab completion${NC} for commands and domain names"
+    echo -e "  • Run ${YELLOW}hostkit list${NC} to see all website IDs"
+    echo -e "  • Domain configs stored in ${YELLOW}/opt/domains/<domain>/${NC}"
+    echo -e "  • SSH keys are dual-generated (RSA 4096 + Ed25519) for maximum compatibility"
+    echo -e "  • Containers are bound to ${YELLOW}127.0.0.1${NC} for security"
+    echo -e "  • SSL certificates auto-renew via cron job"
+    echo ""
+    echo -e "${WHITE}SUPPORT:${NC}"
+    echo -e "  Repository: ${CYAN}https://github.com/robert-kratz/hostkit${NC}"
+    echo -e "  Issues:     ${CYAN}https://github.com/robert-kratz/hostkit/issues${NC}"
+}
+
+# SSL Certificate Management Functions
+check_certificate_exists() {
+    local domain="$1"
+    [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/$domain/privkey.pem" ]
+}
+
+check_certificate_covers_domains() {
+    local cert_domain="$1"
+    shift
+    local domains_to_check=("$@")
+    
+    if ! check_certificate_exists "$cert_domain"; then
+        return 1
+    fi
+    
+    # Get certificate SAN domains
+    local cert_domains=$(openssl x509 -in "/etc/letsencrypt/live/$cert_domain/fullchain.pem" -text -noout | grep -A 1 "Subject Alternative Name" | tail -1 | tr ',' '\n' | sed 's/.*DNS://g' | tr -d ' ')
+    local cert_subject=$(openssl x509 -in "/etc/letsencrypt/live/$cert_domain/fullchain.pem" -subject -noout | sed 's/.*CN=//g' | sed 's/,.*//g')
+    
+    # Add subject to cert domains
+    cert_domains="$cert_domains"$'\n'"$cert_subject"
+    
+    # Check if all required domains are covered
+    for domain in "${domains_to_check[@]}"; do
+        if ! echo "$cert_domains" | grep -q "^$domain$"; then
+            return 1
+        fi
+    done
+    
+    return 0
+}
+
+get_certificate_expiry() {
+    local domain="$1"
+    if check_certificate_exists "$domain"; then
+        openssl x509 -in "/etc/letsencrypt/live/$domain/fullchain.pem" -enddate -noout | cut -d= -f2
+    fi
+}
+
+days_until_expiry() {
+    local domain="$1"
+    if check_certificate_exists "$domain"; then
+        local expiry_date=$(get_certificate_expiry "$domain")
+        local expiry_epoch=$(date -d "$expiry_date" +%s)
+        local current_epoch=$(date +%s)
+        local days=$(( (expiry_epoch - current_epoch) / 86400 ))
+        echo $days
+    else
+        echo "0"
+    fi
+}
+
+backup_certificate() {
+    local domain="$1"
+    local backup_dir="$SCRIPT_DIR/ssl-backups/$domain"
+    
+    if check_certificate_exists "$domain"; then
+        print_step "Backing up SSL certificate for $domain..."
+        mkdir -p "$backup_dir"
+        
+        cp -r "/etc/letsencrypt/live/$domain" "$backup_dir/live-$(date +%Y%m%d-%H%M%S)"
+        cp -r "/etc/letsencrypt/archive/$domain" "$backup_dir/archive-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+        cp "/etc/letsencrypt/renewal/$domain.conf" "$backup_dir/renewal-$(date +%Y%m%d-%H%M%S).conf" 2>/dev/null || true
+        
+        print_success "Certificate backed up to $backup_dir"
+    fi
+}
+
+# Load Modules
+source_module() {
+    local module="$1"
+    if [ -f "$SCRIPT_DIR/modules/${module}.sh" ]; then
+        source "$SCRIPT_DIR/modules/${module}.sh"
+    else
+        print_error "Module $module not found"
+        exit 1
+    fi
+}
+
+# Main Logic
+main() {
+    show_banner
+    check_root
+    init_directories
+    
+    # Create modules directory
+    mkdir -p "$SCRIPT_DIR/modules"
+    
+    local command="${1:-help}"
+    shift || true
+    
+    # Check for updates (except for update/uninstall commands)
+    if [ "$command" != "update" ] && [ "$command" != "uninstall" ] && [ "$command" != "version" ] && [ "$command" != "help" ] && [ "$command" != "--help" ] && [ "$command" != "-h" ]; then
+        check_for_updates
+    fi
+    
+    case "$command" in
+        register)
+            source_module "register"
+            register_website "$@"
+            ;;
+        list)
+            source_module "list"
+            list_websites "$@"
+            ;;
+        info)
+            source_module "info"
+            show_website_info "$@"
+            ;;
+        start)
+            source_module "control"
+            start_website "$@"
+            ;;
+        stop)
+            source_module "control"
+            stop_website "$@"
+            ;;
+        restart)
+            source_module "control"
+            restart_website "$@"
+            ;;
+        deploy)
+            source_module "deploy"
+            deploy_website "$@"
+            ;;
+        versions)
+            source_module "versions"
+            show_versions "$@"
+            ;;
+        switch)
+            source_module "versions"
+            switch_version "$@"
+            ;;
+        logs)
+            source_module "control"
+            show_logs "$@"
+            ;;
+        remove)
+            source_module "remove"
+            remove_website "$@"
+            ;;
+        ssl-status)
+            show_ssl_status "$@"
+            ;;
+        ssl-renew)
+            renew_ssl_certificates "$@"
+            ;;
+        list-users)
+            source_module "users"
+            list_users_with_keys "$@"
+            ;;
+        show-keys)
+            source_module "users"
+            show_user_keys "$@"
+            ;;
+        regenerate-keys)
+            source_module "users"
+            regenerate_user_keys "$@"
+            ;;
+        user-info)
+            source_module "users"
+            show_user_info "$@"
+            ;;
+        list-keys)
+            source_module "ssh-keys"
+            list_domain_keys "$@"
+            ;;
+        add-key)
+            source_module "ssh-keys"
+            add_domain_key "$@"
+            ;;
+        show-key)
+            source_module "ssh-keys"
+            show_domain_key "$@"
+            ;;
+        remove-key)
+            source_module "ssh-keys"
+            remove_domain_key "$@"
+            ;;
+        update)
+            update_hostkit
+            ;;
+        uninstall)
+            source_module "uninstall"
+            uninstall_hostkit "$@"
+            ;;
+        version)
+            echo "HostKit v$(get_current_version)"
+            ;;
+        help|--help|-h)
+            show_help
+            ;;
+        *)
+            print_error "Unknown command: $command"
+            echo ""
+            show_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
