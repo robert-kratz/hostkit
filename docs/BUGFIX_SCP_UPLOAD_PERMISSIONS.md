@@ -10,11 +10,13 @@ error copy file to dest: ***, error message: Process exited with status 1
 
 ## Root Cause
 
-The issue was caused by insufficient write permissions on the `/opt/domains/<domain>/deploy/` directory:
+The issue was caused by multiple SSH wrapper and permission problems:
 
-1. **Permission mismatch**: Directory was created with `755` permissions, limiting write access
-2. **SSH wrapper restrictions**: SCP pattern matching was too strict for GitHub Actions format
-3. **Missing ACL permissions**: No fallback for systems where group permissions might not work
+1. **Missing mkdir permission**: GitHub Actions runs `mkdir -p /opt/domains/.../deploy/` before upload, which was blocked
+2. **Permission mismatch**: Directory was created with `755` permissions, limiting write access
+3. **SSH wrapper restrictions**: SCP pattern matching was too strict for GitHub Actions format
+4. **Missing ACL permissions**: No fallback for systems where group permissions might not work
+5. **Log file permissions**: SSH wrapper couldn't write to `/var/log/hostkit-ssh.log`
 
 ## Solution
 
@@ -45,9 +47,17 @@ scp\ -t\ /opt/domains/*/deploy/*)
     ;;
 ```
 
-**After** (flexible pattern matching):
+**After** (flexible pattern matching + mkdir support):
 
 ```bash
+# Allow mkdir for deployment directory (required by GitHub Actions SCP)
+"mkdir -p /opt/domains/"*"/deploy/"*)
+    exec $SSH_ORIGINAL_COMMAND
+    ;;
+mkdir\ -p\ /opt/domains/*/deploy/*)
+    exec $SSH_ORIGINAL_COMMAND
+    ;;
+# Allow SCP file uploads to deployment directory (target mode)
 scp\ *)
     # Check if it's a target mode upload (-t flag) to deploy directory
     if [[ "$SSH_ORIGINAL_COMMAND" =~ scp.*-t.*/deploy/ ]] || [[ "$SSH_ORIGINAL_COMMAND" =~ scp.*-t.*deploy/ ]]; then
@@ -59,10 +69,28 @@ scp\ *)
     ;;
 ```
 
+### 3. Fixed Log File Permissions
+
+Changed logging to fail silently if permissions are insufficient:
+
+```bash
+# Log all connection attempts (ignore errors if log file not writable)
+echo "$(date): SSH connection from $SSH_CLIENT as $USER: $SSH_ORIGINAL_COMMAND" >> /var/log/hostkit-ssh.log 2>/dev/null || true
+```
+
+And create log file during registration:
+
+```bash
+touch /var/log/hostkit-ssh.log 2>/dev/null || true
+chmod 666 /var/log/hostkit-ssh.log 2>/dev/null || true
+```
+
 ## Files Modified
 
--   `modules/register.sh` - Lines 571-574 (permissions)
--   `modules/register.sh` - Lines 634-648 (SSH wrapper)
+-   `modules/register.sh` - Lines 571-575 (permissions)
+-   `modules/register.sh` - Lines 593-597 (log file setup)
+-   `modules/register.sh` - Lines 611 (logging fix)
+-   `modules/register.sh` - Lines 637-644 (mkdir support)
 
 ## Testing
 

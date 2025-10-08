@@ -592,6 +592,10 @@ EOF
     # Create SSH wrapper script for command restriction
     create_ssh_wrapper "$username"
     
+    # Create and setup SSH log file with proper permissions
+    touch /var/log/hostkit-ssh.log 2>/dev/null || true
+    chmod 666 /var/log/hostkit-ssh.log 2>/dev/null || true
+    
     # Restart SSH service to apply configuration
     systemctl reload sshd 2>/dev/null || print_warning "Could not reload SSH service"
     
@@ -611,8 +615,8 @@ create_ssh_wrapper() {
 # SSH Command Wrapper for Deployment Users
 # Restricts commands to deployment-related operations only
 
-# Log all connection attempts
-echo "$(date): SSH connection from $SSH_CLIENT as $USER: $SSH_ORIGINAL_COMMAND" >> /var/log/hostkit-ssh.log
+# Log all connection attempts (ignore errors if log file not writable)
+echo "$(date): SSH connection from $SSH_CLIENT as $USER: $SSH_ORIGINAL_COMMAND" >> /var/log/hostkit-ssh.log 2>/dev/null || true
 
 # If no command specified, deny interactive shell
 if [ -z "$SSH_ORIGINAL_COMMAND" ]; then
@@ -632,6 +636,13 @@ case "$SSH_ORIGINAL_COMMAND" in
         ;;
     # Allow Docker operations for deployment
     "sudo /opt/hostkit/deploy.sh "*)
+        exec $SSH_ORIGINAL_COMMAND
+        ;;
+    # Allow mkdir for deployment directory (required by GitHub Actions SCP)
+    "mkdir -p /opt/domains/"*"/deploy/"*)
+        exec $SSH_ORIGINAL_COMMAND
+        ;;
+    mkdir\ -p\ /opt/domains/*/deploy/*)
         exec $SSH_ORIGINAL_COMMAND
         ;;
     # Allow SCP file uploads to deployment directory (target mode)

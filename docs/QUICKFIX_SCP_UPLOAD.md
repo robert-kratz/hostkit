@@ -10,6 +10,8 @@ error copy file to dest: ***, error message: Process exited with status 1
 
 ## Ursache
 
+-   GitHub Actions führt `mkdir -p /opt/domains/.../deploy/` vor dem Upload aus → wurde blockiert
+-   SSH-Wrapper konnte nicht in Log-Datei schreiben (Berechtigungsfehler)
 -   Fehlende Schreibrechte im `/opt/domains/<domain>/deploy/` Verzeichnis
 -   SSH-Wrapper war zu restriktiv für GitHub Actions SCP-Format
 

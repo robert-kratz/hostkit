@@ -143,8 +143,8 @@ if [ -f "/opt/hostkit/ssh-wrapper.sh" ]; then
 # SSH Command Wrapper for Deployment Users
 # Restricts commands to deployment-related operations only
 
-# Log all connection attempts
-echo "$(date): SSH connection from $SSH_CLIENT as $USER: $SSH_ORIGINAL_COMMAND" >> /var/log/hostkit-ssh.log
+# Log all connection attempts (ignore errors if log file not writable)
+echo "$(date): SSH connection from $SSH_CLIENT as $USER: $SSH_ORIGINAL_COMMAND" >> /var/log/hostkit-ssh.log 2>/dev/null || true
 
 # If no command specified, deny interactive shell
 if [ -z "$SSH_ORIGINAL_COMMAND" ]; then
@@ -164,6 +164,13 @@ case "$SSH_ORIGINAL_COMMAND" in
         ;;
     # Allow Docker operations for deployment
     "sudo /opt/hostkit/deploy.sh "*)
+        exec $SSH_ORIGINAL_COMMAND
+        ;;
+    # Allow mkdir for deployment directory (required by GitHub Actions SCP)
+    "mkdir -p /opt/domains/"*"/deploy/"*)
+        exec $SSH_ORIGINAL_COMMAND
+        ;;
+    mkdir\ -p\ /opt/domains/*/deploy/*)
         exec $SSH_ORIGINAL_COMMAND
         ;;
     # Allow SCP file uploads to deployment directory (target mode)
@@ -211,6 +218,12 @@ EOF
     
     chmod +x "/opt/hostkit/ssh-wrapper.sh"
     print_success "SSH wrapper updated"
+    
+    # Setup SSH log file with proper permissions
+    print_step "Setting up SSH log file"
+    touch /var/log/hostkit-ssh.log 2>/dev/null || true
+    chmod 666 /var/log/hostkit-ssh.log 2>/dev/null || true
+    print_success "SSH log file configured"
 else
     print_warning "SSH wrapper not found at /opt/hostkit/ssh-wrapper.sh"
 fi
