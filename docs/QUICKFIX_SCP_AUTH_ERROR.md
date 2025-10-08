@@ -22,10 +22,11 @@ sudo hostkit system update-wrapper
 ```
 
 This will:
-- ✅ Update SSH wrapper to support GitHub Actions SCP
-- ✅ Enable modern SCP/SFTP protocols
-- ✅ Reload SSH daemon automatically
-- ✅ Keep all existing users and configurations
+
+-   ✅ Update SSH wrapper to support GitHub Actions SCP
+-   ✅ Enable modern SCP/SFTP protocols
+-   ✅ Reload SSH daemon automatically
+-   ✅ Keep all existing users and configurations
 
 ### Option 2: Manual Fix
 
@@ -161,11 +162,12 @@ sudo hostkit system diagnostics
 ```
 
 This will show:
-- ✅ SSH wrapper status
-- ✅ GitHub Actions SCP support
-- ✅ User configurations
-- ✅ SSL certificates
-- ⚠️ Any issues found
+
+-   ✅ SSH wrapper status
+-   ✅ GitHub Actions SCP support
+-   ✅ User configurations
+-   ✅ SSL certificates
+-   ⚠️ Any issues found
 
 ## Complete Update Steps
 
@@ -202,7 +204,7 @@ sudo git pull
 sudo bash install.sh  # Reinstall to update the binary
 ```
 
-### "system: command not found" 
+### "system: command not found"
 
 You're running an old HostKit version:
 
@@ -214,28 +216,31 @@ sudo hostkit version  # Check version
 ### Still getting authentication errors
 
 1. **Verify SSH key is correct:**
-   ```bash
-   # On server, get the public key
-   sudo cat /home/deploy-xxx/.ssh/deploy-xxx-rsa.pub
-   
-   # Compare with authorized_keys
-   sudo cat /home/deploy-xxx/.ssh/authorized_keys
-   ```
+
+    ```bash
+    # On server, get the public key
+    sudo cat /home/deploy-xxx/.ssh/deploy-xxx-rsa.pub
+
+    # Compare with authorized_keys
+    sudo cat /home/deploy-xxx/.ssh/authorized_keys
+    ```
 
 2. **Check SSH config:**
-   ```bash
-   sudo cat /etc/ssh/sshd_config.d/hostkit-deploy-*.conf
-   ```
+
+    ```bash
+    sudo cat /etc/ssh/sshd_config.d/hostkit-deploy-*.conf
+    ```
 
 3. **Test with verbose logging:**
-   ```bash
-   ssh -vvv -i ~/.ssh/deploy-key deploy-user@your-vps
-   ```
+
+    ```bash
+    ssh -vvv -i ~/.ssh/deploy-key deploy-user@your-vps
+    ```
 
 4. **Check server SSH logs:**
-   ```bash
-   sudo journalctl -u sshd -f
-   ```
+    ```bash
+    sudo journalctl -u sshd -f
+    ```
 
 ### SCP works but deploy fails
 
@@ -258,17 +263,17 @@ This will show you if anything needs updating.
 
 ## When to Use Each Command
 
-| Command | When to Use |
-|---------|-------------|
-| `system update-wrapper` | GitHub Actions SCP fails |
-| `system update-configs` | Migrating to new version |
-| `system diagnostics` | After updates or when troubleshooting |
+| Command                 | When to Use                           |
+| ----------------------- | ------------------------------------- |
+| `system update-wrapper` | GitHub Actions SCP fails              |
+| `system update-configs` | Migrating to new version              |
+| `system diagnostics`    | After updates or when troubleshooting |
 
 ## Related Documentation
 
-- `docs/GITHUB_ACTIONS_DEPLOYMENT.md` - Complete CI/CD setup guide
-- `docs/BUGFIX_GITHUB_ACTIONS_SCP.md` - Technical details of the fix
-- `docs/SSH_KEY_MANAGEMENT.md` - SSH key workflows
+-   `docs/GITHUB_ACTIONS_DEPLOYMENT.md` - Complete CI/CD setup guide
+-   `docs/BUGFIX_GITHUB_ACTIONS_SCP.md` - Technical details of the fix
+-   `docs/SSH_KEY_MANAGEMENT.md` - SSH key workflows
 
 ## Support
 
