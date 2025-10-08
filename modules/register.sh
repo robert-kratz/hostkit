@@ -570,7 +570,10 @@ EOF
     
     # Grant access to deployment folder with proper permissions
     chown -R "$username:$username" "$WEB_ROOT/$domain/deploy"
-    chmod 755 "$WEB_ROOT/$domain/deploy"
+    chmod 775 "$WEB_ROOT/$domain/deploy"
+    # Ensure user can write files in deploy directory
+    setfacl -R -m u:${username}:rwx "$WEB_ROOT/$domain/deploy" 2>/dev/null || true
+    setfacl -d -m u:${username}:rwx "$WEB_ROOT/$domain/deploy" 2>/dev/null || true
     
     # Enhanced sudo permissions - only specific commands
     cat > "/etc/sudoers.d/hostkit-$username" <<EOF
@@ -632,18 +635,15 @@ case "$SSH_ORIGINAL_COMMAND" in
         exec $SSH_ORIGINAL_COMMAND
         ;;
     # Allow SCP file uploads to deployment directory (target mode)
-    scp\ -t\ */deploy/*)
-        exec $SSH_ORIGINAL_COMMAND
-        ;;
-    scp\ -t\ /opt/domains/*/deploy/*)
-        exec $SSH_ORIGINAL_COMMAND
-        ;;
-    # Allow SCP with various flags
-    scp\ *\ -t\ */deploy/*)
-        exec $SSH_ORIGINAL_COMMAND
-        ;;
-    scp\ *\ -t\ /opt/domains/*/deploy/*)
-        exec $SSH_ORIGINAL_COMMAND
+    # This covers all SCP patterns from GitHub Actions and manual uploads
+    scp\ *)
+        # Check if it's a target mode upload (-t flag) to deploy directory
+        if [[ "$SSH_ORIGINAL_COMMAND" =~ scp.*-t.*/deploy/ ]] || [[ "$SSH_ORIGINAL_COMMAND" =~ scp.*-t.*deploy/ ]]; then
+            exec $SSH_ORIGINAL_COMMAND
+        else
+            echo "ERROR: SCP only allowed to deployment directories (/opt/domains/*/deploy/)"
+            exit 1
+        fi
         ;;
     # Allow rsync to deployment directory
     "rsync "*)
