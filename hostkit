@@ -750,6 +750,14 @@ show_help() {
     echo -e "  ${GREEN}memory-stats${NC}               Show system memory overview and per-website allocation"
     echo -e "                              Displays total, used, and available memory"
     echo ""
+    echo -e "${WHITE}SYSTEM MAINTENANCE:${NC}"
+    echo -e "  ${GREEN}system update-wrapper${NC}      Update SSH wrapper to fix GitHub Actions SCP issues"
+    echo -e "                              Enables modern SCP/SFTP protocols for CI/CD"
+    echo -e "  ${GREEN}system update-configs${NC}      Update SSH configs for all deployment users"
+    echo -e "                              Migrates to new configuration format"
+    echo -e "  ${GREEN}system diagnostics${NC}         Run system health check and diagnostics"
+    echo -e "                              Checks SSH wrapper, users, configs, and websites"
+    echo ""
     echo -e "${WHITE}SYSTEM:${NC}"
     echo -e "  ${GREEN}update${NC}                     Update HostKit to the latest version"
     echo -e "  ${GREEN}uninstall${NC}                  Uninstall HostKit with selective component removal"
@@ -982,6 +990,10 @@ main() {
         memory-stats)
             source_module "memory"
             cmd_memory_stats "$@"
+            ;;
+        system)
+            source_module "system"
+            system_menu "$@"
             ;;
         update)
             update_hostkit
