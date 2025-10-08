@@ -5,11 +5,12 @@
 ```yaml
 - name: Deploy on VPS
   run: |
-    ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
-      "hostkit deploy $DOMAIN /opt/domains/$DOMAIN/deploy/image.tar"
+      ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
+        "hostkit deploy $DOMAIN /opt/domains/$DOMAIN/deploy/image.tar"
 ```
 
 **Fehler:**
+
 ```
 ✗ This script must be run as root
 Error: Process completed with exit code 1.
@@ -22,16 +23,16 @@ Füge **`sudo`** vor `hostkit` hinzu:
 ```yaml
 - name: Deploy on VPS
   run: |
-    ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
-      "sudo hostkit deploy $DOMAIN /opt/domains/$DOMAIN/deploy/image.tar"
+      ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
+        "sudo hostkit deploy $DOMAIN /opt/domains/$DOMAIN/deploy/image.tar"
 ```
 
 ## Warum?
 
-- Der Deploy-User ist **kein Root-User**
-- HostKit benötigt Root-Rechte für Docker-Operationen
-- Der User hat bereits `NOPASSWD` sudo-Rechte für `hostkit deploy`
-- Kein Passwort erforderlich!
+-   Der Deploy-User ist **kein Root-User**
+-   HostKit benötigt Root-Rechte für Docker-Operationen
+-   Der User hat bereits `NOPASSWD` sudo-Rechte für `hostkit deploy`
+-   Kein Passwort erforderlich!
 
 ## Komplettes funktionierendes Workflow-Beispiel
 
@@ -39,67 +40,67 @@ Füge **`sudo`** vor `hostkit` hinzu:
 name: Deploy to VPS
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+    push:
+        branches: [main]
+    workflow_dispatch:
 
 concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+    group: deploy-${{ github.ref }}
+    cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    
-    env:
-      DOMAIN: ${{ secrets.DOMAIN }}
-      VPS_HOST: ${{ secrets.VPS_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      SSH_PORT: ${{ secrets.VPS_PORT != '' && secrets.VPS_PORT || '22' }}
+    build-and-deploy:
+        runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+        env:
+            DOMAIN: ${{ secrets.DOMAIN }}
+            VPS_HOST: ${{ secrets.VPS_HOST }}
+            DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+            SSH_PORT: ${{ secrets.VPS_PORT != '' && secrets.VPS_PORT || '22' }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        steps:
+            - name: Checkout Code
+              uses: actions/checkout@v4
 
-      - name: Build Docker Image
-        run: |
-          docker build -t "$DOMAIN" .
-          docker save "$DOMAIN" > image.tar
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
 
-      - name: Start ssh-agent and add key
-        uses: webfactory/ssh-agent@v0.8.0
-        with:
-          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+            - name: Build Docker Image
+              run: |
+                  docker build -t "$DOMAIN" .
+                  docker save "$DOMAIN" > image.tar
 
-      - name: Add server host key to known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "$SSH_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
+            - name: Start ssh-agent and add key
+              uses: webfactory/ssh-agent@v0.8.0
+              with:
+                  ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
-      - name: Upload Image to VPS via SCP
-        run: |
-          scp -P "$SSH_PORT" image.tar \
-            "$DEPLOY_USER@$VPS_HOST:/opt/domains/$DOMAIN/deploy/image.tar"
+            - name: Add server host key to known_hosts
+              run: |
+                  mkdir -p ~/.ssh
+                  ssh-keyscan -p "$SSH_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
 
-      - name: Deploy on VPS
-        run: |
-          ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
-            "sudo hostkit deploy $DOMAIN /opt/domains/$DOMAIN/deploy/image.tar"
-        # ^^^^^ WICHTIG: sudo vor hostkit!
+            - name: Upload Image to VPS via SCP
+              run: |
+                  scp -P "$SSH_PORT" image.tar \
+                    "$DEPLOY_USER@$VPS_HOST:/opt/domains/$DOMAIN/deploy/image.tar"
 
-      - name: Cleanup deployment file
-        run: |
-          ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
-            "rm -f /opt/domains/$DOMAIN/deploy/image.tar"
-        continue-on-error: true
+            - name: Deploy on VPS
+              run: |
+                  ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
+                    "sudo hostkit deploy $DOMAIN /opt/domains/$DOMAIN/deploy/image.tar"
+              # ^^^^^ WICHTIG: sudo vor hostkit!
 
-      - name: Health Check
-        run: |
-          sleep 10
-          curl -fsS "https://$DOMAIN" >/dev/null || exit 1
+            - name: Cleanup deployment file
+              run: |
+                  ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
+                    "rm -f /opt/domains/$DOMAIN/deploy/image.tar"
+              continue-on-error: true
+
+            - name: Health Check
+              run: |
+                  sleep 10
+                  curl -fsS "https://$DOMAIN" >/dev/null || exit 1
 ```
 
 ## Noch Probleme mit SCP Upload?
