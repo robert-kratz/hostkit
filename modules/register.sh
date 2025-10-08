@@ -579,8 +579,13 @@ EOF
     cat > "/etc/sudoers.d/hostkit-$username" <<EOF
 # Deployment permissions for $username
 Defaults:$username !requiretty
+Defaults:$username !authenticate
 $username ALL=(root) NOPASSWD: /usr/bin/hostkit deploy $domain *
+$username ALL=(root) NOPASSWD: /usr/local/bin/hostkit deploy $domain *
 $username ALL=(root) NOPASSWD: /opt/hostkit/hostkit deploy $domain *
+$username ALL=(root) NOPASSWD: /usr/bin/hostkit deploy *
+$username ALL=(root) NOPASSWD: /usr/local/bin/hostkit deploy *
+$username ALL=(root) NOPASSWD: /opt/hostkit/hostkit deploy *
 $username ALL=(root) NOPASSWD: /usr/bin/docker load
 $username ALL=(root) NOPASSWD: /usr/bin/docker run *
 $username ALL=(root) NOPASSWD: /usr/bin/docker stop *
