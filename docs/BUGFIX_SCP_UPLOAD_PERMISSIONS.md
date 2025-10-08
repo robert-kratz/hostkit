@@ -3,6 +3,7 @@
 ## Problem Description
 
 GitHub Actions deployment fails during the "Upload Image to VPS" step with error:
+
 ```
 error copy file to dest: ***, error message: Process exited with status 1
 ```
@@ -34,6 +35,7 @@ setfacl -d -m u:${username}:rwx "$WEB_ROOT/$domain/deploy" 2>/dev/null || true
 Updated the SSH command wrapper to handle all SCP patterns from GitHub Actions:
 
 **Before** (too restrictive):
+
 ```bash
 scp\ -t\ */deploy/*)
     exec $SSH_ORIGINAL_COMMAND
@@ -44,6 +46,7 @@ scp\ -t\ /opt/domains/*/deploy/*)
 ```
 
 **After** (flexible pattern matching):
+
 ```bash
 scp\ *)
     # Check if it's a target mode upload (-t flag) to deploy directory
@@ -58,19 +61,22 @@ scp\ *)
 
 ## Files Modified
 
-- `modules/register.sh` - Lines 571-574 (permissions)
-- `modules/register.sh` - Lines 634-648 (SSH wrapper)
+-   `modules/register.sh` - Lines 571-574 (permissions)
+-   `modules/register.sh` - Lines 634-648 (SSH wrapper)
 
 ## Testing
 
 ### Manual Test
+
 ```bash
 # On your local machine
 scp -i ~/.ssh/deploy-example-com-rsa image.tar deploy-example-com@your-vps:/opt/domains/example.com/deploy/
 ```
 
 ### GitHub Actions Test
+
 Use the standard workflow:
+
 ```yaml
 - name: Upload Image to VPS
   uses: appleboy/scp-action@v0.1.7
@@ -79,8 +85,8 @@ Use the standard workflow:
       username: ${{ secrets.DEPLOY_USER }}
       key: ${{ secrets.DEPLOY_SSH_KEY }}
       port: ${{ secrets.VPS_PORT || 22 }}
-      source: 'image.tar'
-      target: '/opt/domains/${{ secrets.DOMAIN }}/deploy/'
+      source: "image.tar"
+      target: "/opt/domains/${{ secrets.DOMAIN }}/deploy/"
 ```
 
 ## For Existing Installations
@@ -106,55 +112,60 @@ sudo hostkit register --update-wrapper  # (if this command exists)
 ## Security Notes
 
 This fix maintains security by:
-- Only allowing SCP uploads to `/opt/domains/*/deploy/` directories
-- Maintaining command restrictions through the SSH wrapper
-- Using regex pattern matching to validate target paths
-- Preserving user isolation (each domain has its own deploy user)
+
+-   Only allowing SCP uploads to `/opt/domains/*/deploy/` directories
+-   Maintaining command restrictions through the SSH wrapper
+-   Using regex pattern matching to validate target paths
+-   Preserving user isolation (each domain has its own deploy user)
 
 ## Related Issues
 
-- GitHub Actions SCP error: "Process exited with status 1"
-- Permission denied when uploading to VPS
-- SSH command restrictions blocking legitimate uploads
+-   GitHub Actions SCP error: "Process exited with status 1"
+-   Permission denied when uploading to VPS
+-   SSH command restrictions blocking legitimate uploads
 
 ## Version
 
-- **Fixed in**: HostKit v1.3.1 (unreleased)
-- **Affects**: All versions prior to v1.3.1
-- **Severity**: High - Blocks GitHub Actions deployments
+-   **Fixed in**: HostKit v1.3.1 (unreleased)
+-   **Affects**: All versions prior to v1.3.1
+-   **Severity**: High - Blocks GitHub Actions deployments
 
 ## Additional Troubleshooting
 
 If the issue persists after applying this fix:
 
 1. **Check SSH wrapper logs**:
-   ```bash
-   sudo tail -f /var/log/hostkit-ssh.log
-   ```
+
+    ```bash
+    sudo tail -f /var/log/hostkit-ssh.log
+    ```
 
 2. **Test SSH connection**:
-   ```bash
-   ssh -i ~/.ssh/deploy-example-com-rsa deploy-example-com@your-vps
-   ```
+
+    ```bash
+    ssh -i ~/.ssh/deploy-example-com-rsa deploy-example-com@your-vps
+    ```
 
 3. **Verify file permissions**:
-   ```bash
-   ls -la /opt/domains/example.com/deploy/
-   ```
+
+    ```bash
+    ls -la /opt/domains/example.com/deploy/
+    ```
 
 4. **Check ACL support**:
-   ```bash
-   getfacl /opt/domains/example.com/deploy/
-   ```
+
+    ```bash
+    getfacl /opt/domains/example.com/deploy/
+    ```
 
 5. **Verify SSH wrapper execution**:
-   ```bash
-   sudo cat /opt/hostkit/ssh-wrapper.sh
-   sudo chmod +x /opt/hostkit/ssh-wrapper.sh
-   ```
+    ```bash
+    sudo cat /opt/hostkit/ssh-wrapper.sh
+    sudo chmod +x /opt/hostkit/ssh-wrapper.sh
+    ```
 
 ## References
 
-- [GitHub Actions Deployment Guide](./GITHUB_ACTIONS_DEPLOYMENT.md)
-- [SSH Key Management](./SSH_KEY_MANAGEMENT.md)
-- [Security Enhancements](./SECURITY_ENHANCEMENTS.md)
+-   [GitHub Actions Deployment Guide](./GITHUB_ACTIONS_DEPLOYMENT.md)
+-   [SSH Key Management](./SSH_KEY_MANAGEMENT.md)
+-   [Security Enhancements](./SECURITY_ENHANCEMENTS.md)

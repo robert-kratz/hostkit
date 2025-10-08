@@ -1,14 +1,17 @@
 # Schnelllösung: GitHub Actions SCP Upload Fehler
 
 ## Problem
+
 Der SCP-Upload in GitHub Actions schlägt fehl mit:
+
 ```
 error copy file to dest: ***, error message: Process exited with status 1
 ```
 
 ## Ursache
-- Fehlende Schreibrechte im `/opt/domains/<domain>/deploy/` Verzeichnis
-- SSH-Wrapper war zu restriktiv für GitHub Actions SCP-Format
+
+-   Fehlende Schreibrechte im `/opt/domains/<domain>/deploy/` Verzeichnis
+-   SSH-Wrapper war zu restriktiv für GitHub Actions SCP-Format
 
 ## Sofortlösung (für bestehende Installationen)
 
@@ -89,19 +92,19 @@ Die Fehlerbehebung ist bereits integriert!
 
 Stelle sicher, dass folgende Secrets korrekt gesetzt sind:
 
-| Secret | Wert |
-|--------|------|
+| Secret           | Wert                                 |
+| ---------------- | ------------------------------------ |
 | `DEPLOY_SSH_KEY` | **RSA Private Key** (nicht Ed25519!) |
-| `DEPLOY_USER` | z.B. `deploy-example-com` |
-| `DOMAIN` | z.B. `example.com` |
-| `VPS_HOST` | IP oder Hostname deines VPS |
-| `VPS_PORT` | 22 (oder dein SSH Port) |
+| `DEPLOY_USER`    | z.B. `deploy-example-com`            |
+| `DOMAIN`         | z.B. `example.com`                   |
+| `VPS_HOST`       | IP oder Hostname deines VPS          |
+| `VPS_PORT`       | 22 (oder dein SSH Port)              |
 
 ## Weitere Hilfe
 
-- [Vollständige Bugfix Dokumentation](./BUGFIX_SCP_UPLOAD_PERMISSIONS.md)
-- [GitHub Actions Guide](./GITHUB_ACTIONS_DEPLOYMENT.md)
-- [SSH Key Management](./SSH_KEY_MANAGEMENT.md)
+-   [Vollständige Bugfix Dokumentation](./BUGFIX_SCP_UPLOAD_PERMISSIONS.md)
+-   [GitHub Actions Guide](./GITHUB_ACTIONS_DEPLOYMENT.md)
+-   [SSH Key Management](./SSH_KEY_MANAGEMENT.md)
 
 ## Kontakt
 
