@@ -7,6 +7,12 @@
 # 
 # Licensed under the MIT License
 
+# Capitalize first letter (compatible with bash 3.x)
+capitalize() {
+    local str="$1"
+    echo "$(echo ${str:0:1} | tr '[:lower:]' '[:upper:]')${str:1}"
+}
+
 # Uninstall options structure
 declare -A UNINSTALL_OPTIONS=(
     ["package"]="Remove HostKit package and binaries"
@@ -90,9 +96,9 @@ show_uninstall_menu() {
     
     for key in "${option_keys[@]}"; do
         if [[ " ${installed_components[*]} " =~ " ${key} " ]]; then
-            echo -e "  ${GREEN}[✓]${NC} ${key^}: ${UNINSTALL_OPTIONS[$key]}"
+            echo -e "  ${GREEN}[✓]${NC} $(capitalize "$key"): ${UNINSTALL_OPTIONS[$key]}"
         else
-            echo -e "  ${YELLOW}[-]${NC} ${key^}: ${UNINSTALL_OPTIONS[$key]} ${YELLOW}(not installed)${NC}"
+            echo -e "  ${YELLOW}[-]${NC} $(capitalize "$key"): ${UNINSTALL_OPTIONS[$key]} ${YELLOW}(not installed)${NC}"
         fi
     done
     
@@ -189,7 +195,7 @@ show_uninstall_summary() {
     echo ""
     
     for component in "${components[@]}"; do
-        echo -e "  ${RED}✗${NC} ${component^}: ${UNINSTALL_OPTIONS[$component]}"
+        echo -e "  ${RED}✗${NC} $(capitalize "$component"): ${UNINSTALL_OPTIONS[$component]}"
     done
     
     echo ""

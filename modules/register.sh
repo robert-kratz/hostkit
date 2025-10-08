@@ -256,33 +256,43 @@ register_website() {
         fi
     done
     
-    # Simple username input
+    # Optional username input
     local suggested_username="deploy-${domain//./-}"
     echo ""
     echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}Step 3: User Setup${NC}"
+    echo -e "${WHITE}Step 3: User Setup (Optional)${NC}"
+    echo -e "${CYAN}You can create an SSH user now or skip and do it later${NC}"
+    echo -e "${CYAN}Use 'hostkit users add <domain>' to add users later${NC}"
     echo ""
     
     local username=""
-    while [ -z "$username" ]; do
-        echo -n "Deployment username [$suggested_username]: "
-        read -r username
-        username=${username:-$suggested_username}
-        
-        # Clean input: remove ANSI codes, whitespace, convert to lowercase
-        username=$(echo "$username" | sed 's/\x1b\[[0-9;]*m//g' | tr -d ' \t\r\n' | tr '[:upper:]' '[:lower:]')
-        
-        if ! validate_username "$username"; then
-            echo -e "${RED}✗ Invalid username (lowercase letters, numbers, hyphens only)${NC}"
-            username=""
-            continue
-        fi
-        
-        if id "$username" &>/dev/null; then
-            echo -e "${RED}✗ User already exists${NC}"
-            username=""
-        fi
-    done
+    local skip_user=false
+    
+    if ask_yes_no "Create deployment user now?"; then
+        while [ -z "$username" ]; do
+            echo -n "Deployment username [$suggested_username]: "
+            read -r username
+            username=${username:-$suggested_username}
+            
+            # Clean input: remove ANSI codes, whitespace, convert to lowercase
+            username=$(echo "$username" | sed 's/\x1b\[[0-9;]*m//g' | tr -d ' \t\r\n' | tr '[:upper:]' '[:lower:]')
+            
+            if ! validate_username "$username"; then
+                echo -e "${RED}✗ Invalid username (lowercase letters, numbers, hyphens only)${NC}"
+                username=""
+                continue
+            fi
+            
+            if id "$username" &>/dev/null; then
+                echo -e "${RED}✗ User already exists${NC}"
+                username=""
+            fi
+        done
+    else
+        skip_user=true
+        username="none"
+        echo -e "${YELLOW}ℹ User creation skipped - you can add users later${NC}"
+    fi
     
     # Simple memory allocation
     echo ""
@@ -341,7 +351,11 @@ register_website() {
         echo -e "  Redirects: ${CYAN}${redirect_domains[*]}${NC}"
     fi
     echo -e "  Port:     ${CYAN}$port${NC}"
-    echo -e "  User:     ${CYAN}$username${NC}"
+    if [ "$skip_user" = true ]; then
+        echo -e "  User:     ${YELLOW}(skipped - add later)${NC}"
+    else
+        echo -e "  User:     ${CYAN}$username${NC}"
+    fi
     echo -e "  Memory:   ${CYAN}$memory_limit${NC}"
     echo ""
     
@@ -388,15 +402,23 @@ register_website() {
 EOF
     transaction_add_step "config_saved"
     
-    # Create SSH user
-    echo ""
-    echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}Step 5: SSH User Setup${NC}"
-    echo -e "${CYAN}Creates a dedicated user with SSH keys for secure deployments${NC}"
-    echo ""
-    
-    if ask_yes_no "Create SSH user?"; then
-        create_ssh_user "$domain" "$username"
+    # Create SSH user (only if not skipped)
+    if [ "$skip_user" = false ]; then
+        echo ""
+        echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${WHITE}Step 5: SSH User Setup${NC}"
+        echo -e "${CYAN}Creates a dedicated user with SSH keys for secure deployments${NC}"
+        echo ""
+        
+        if ask_yes_no "Create SSH user and keys now?"; then
+            create_ssh_user "$domain" "$username"
+        else
+            echo -e "${YELLOW}ℹ SSH user creation skipped - you can add users later with:${NC}"
+            echo -e "${CYAN}  hostkit users add $domain${NC}"
+        fi
+    else
+        echo ""
+        echo -e "${YELLOW}ℹ SSH user setup skipped (no user created)${NC}"
     fi
     
     # Setup SSL certificates
@@ -422,6 +444,18 @@ EOF
     print_info "Deployment directory: $WEB_ROOT/$domain/deploy"
     if [ ${#redirect_domains[@]} -gt 0 ]; then
         print_info "Redirect domains: ${redirect_domains[*]} -> $domain"
+    fi
+    
+    # Show next steps if user was skipped
+    if [ "$skip_user" = true ]; then
+        echo ""
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${WHITE}Next Steps:${NC}"
+        echo -e "${CYAN}  1. Create deployment user:${NC}"
+        echo -e "     hostkit users add $domain"
+        echo -e "${CYAN}  2. Deploy your application:${NC}"
+        echo -e "     hostkit deploy $domain /path/to/your-app.tar"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     fi
     
     # Transaction completed successfully - remove trap handlers
