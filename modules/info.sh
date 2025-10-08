@@ -106,37 +106,79 @@ show_website_info() {
         done <<< "$redirect_domains"
     fi
     
+    # Check deployment type
+    local deployment_type=$(echo "$config" | jq -r '.type // "single"')
+    
+    echo ""
+    echo -e "${WHITE}DEPLOYMENT TYPE${NC}"
+    if [ "$deployment_type" = "compose" ]; then
+        echo -e "  ${CYAN}Type:${NC}                ${BLUE}Docker Compose${NC}"
+        
+        # Show services
+        local services=$(echo "$config" | jq -r '.services[]?' 2>/dev/null)
+        if [ -n "$services" ]; then
+            echo -e "  ${CYAN}Services:${NC}"
+            while IFS= read -r service; do
+                local service_container="${container_name}_${service}_1"
+                local service_status="not running"
+                if docker ps --format '{{.Names}}' | grep -q "^${service_container}$"; then
+                    service_status="${GREEN}running${NC}"
+                elif docker ps -a --format '{{.Names}}' | grep -q "^${service_container}$"; then
+                    service_status="${YELLOW}stopped${NC}"
+                else
+                    service_status="${RED}not found${NC}"
+                fi
+                echo -e "    - ${service} (${service_status})"
+            done <<< "$services"
+        fi
+        
+        local main_service=$(echo "$config" | jq -r '.main_service // "unknown"')
+        echo -e "  ${CYAN}Main Service:${NC}        $main_service"
+    else
+        echo -e "  ${CYAN}Type:${NC}                ${BLUE}Single Container${NC}"
+    fi
+    
     echo ""
     echo -e "${WHITE}CONTAINER STATUS${NC}"
     case "$container_status" in
         running)
             echo -e "  ${CYAN}Status:${NC}              ${GREEN}●${NC} Running"
-            echo -e "  ${CYAN}Container ID:${NC}        $container_id"
-            echo -e "  ${CYAN}Image:${NC}               $container_image"
-            echo -e "  ${CYAN}Uptime:${NC}              $container_uptime"
-            
-            # Show memory usage if container is running
-            local mem_usage=$(docker stats "$container_name" --no-stream --format "{{.MemUsage}}" 2>/dev/null)
-            if [ -n "$mem_usage" ]; then
-                echo -e "  ${CYAN}Memory Usage:${NC}        $mem_usage"
+            if [ "$deployment_type" != "compose" ]; then
+                echo -e "  ${CYAN}Container ID:${NC}        $container_id"
+                echo -e "  ${CYAN}Image:${NC}               $container_image"
+                echo -e "  ${CYAN}Uptime:${NC}              $container_uptime"
+                
+                # Show memory usage if container is running
+                local mem_usage=$(docker stats "$container_name" --no-stream --format "{{.MemUsage}}" 2>/dev/null)
+                if [ -n "$mem_usage" ]; then
+                    echo -e "  ${CYAN}Memory Usage:${NC}        $mem_usage"
+                fi
             fi
+            ;;
+        partial)
+            echo -e "  ${CYAN}Status:${NC}              ${YELLOW}⚠${NC} Partially Running"
+            echo -e "  ${YELLOW}Some services are not running${NC}"
             ;;
         stopped)
             echo -e "  ${CYAN}Status:${NC}              ${YELLOW}○${NC} Stopped"
-            echo -e "  ${CYAN}Container ID:${NC}        $container_id"
-            echo -e "  ${CYAN}Image:${NC}               $container_image"
+            if [ "$deployment_type" != "compose" ]; then
+                echo -e "  ${CYAN}Container ID:${NC}        $container_id"
+                echo -e "  ${CYAN}Image:${NC}               $container_image"
+            fi
             ;;
         not_found)
-            echo -e "  ${CYAN}Status:${NC}              ${RED}✗${NC} No container"
-            echo -e "  ${YELLOW}Run 'hostkit deploy $domain' to create container${NC}"
+            echo -e "  ${CYAN}Status:${NC}              ${RED}✗${NC} No deployment"
+            echo -e "  ${YELLOW}Run 'hostkit deploy $domain' to create deployment${NC}"
             ;;
     esac
     
-    # Show memory limits
-    local memory_limit=$(echo "$config" | jq -r '.memory_limit // "512m"')
-    local memory_reservation=$(echo "$config" | jq -r '.memory_reservation // "256m"')
-    echo -e "  ${CYAN}Memory Limit:${NC}        $memory_limit"
-    echo -e "  ${CYAN}Memory Reservation:${NC}  $memory_reservation"
+    # Show memory limits (only for single container)
+    if [ "$deployment_type" != "compose" ]; then
+        local memory_limit=$(echo "$config" | jq -r '.memory_limit // "512m"')
+        local memory_reservation=$(echo "$config" | jq -r '.memory_reservation // "256m"')
+        echo -e "  ${CYAN}Memory Limit:${NC}        $memory_limit"
+        echo -e "  ${CYAN}Memory Reservation:${NC}  $memory_reservation"
+    fi
     
     echo ""
     echo -e "${WHITE}SSL CERTIFICATE${NC}"

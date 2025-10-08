@@ -39,10 +39,12 @@ HostKit is a comprehensive CLI tool for managing Docker-based websites on your V
 
 -   GitHub Actions ready with full CI/CD integration
 -   Docker-based deployments for consistent environments
+-   **Docker Compose support** - automatic detection and multi-service deployments
 -   Version management - keeps last 3 versions for rollbacks
 -   Zero-downtime deployments
 -   Automatic cleanup of old versions
 -   Manual deployment support via TAR files
+-   Seamless single-container and multi-container support
 
 ### Nginx & SSL
 
@@ -450,6 +452,7 @@ Comprehensive documentation can be found in the `docs/` directory:
 
 | Document                                                    | Description                                       |
 | ----------------------------------------------------------- | ------------------------------------------------- |
+| [Docker Compose Guide](docs/DOCKER_COMPOSE_GUIDE.md)        | **NEW!** Multi-container deployments with Compose |
 | [GitHub Actions Examples](docs/github-actions-example.md)   | Complete CI/CD workflows and best practices       |
 | [SSH Key Management](docs/SSH_KEY_MANAGEMENT.md)            | Multi-key system, key rotation, CI/CD integration |
 | [SSH Key Workflows](docs/SSH_KEY_WORKFLOWS.md)              | Practical examples and use cases                  |

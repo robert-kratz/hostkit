@@ -88,13 +88,28 @@ remove_website() {
     echo ""
     print_step "Removing website: $domain"
     
-    # Stop and remove container
+    # Check deployment type
+    local deployment_type=$(echo "$config" | jq -r '.type // "single"')
     local container_name=$(get_container_name "$domain")
-    if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
-        print_step "Removing container..."
-        docker stop "$container_name" 2>/dev/null || true
-        docker rm "$container_name" 2>/dev/null || true
-        print_success "Container removed"
+    
+    # Stop and remove container/compose stack
+    if [ "$deployment_type" = "compose" ]; then
+        print_step "Removing Docker Compose stack..."
+        cd "$WEB_ROOT/$domain" 2>/dev/null
+        if [ -f "docker-compose.yml" ]; then
+            export COMPOSE_PROJECT_NAME="$container_name"
+            docker-compose down -v 2>/dev/null || true
+            print_success "Compose stack removed"
+        fi
+        cd - > /dev/null 2>&1
+    else
+        # Standard single container
+        if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            print_step "Removing container..."
+            docker stop "$container_name" 2>/dev/null || true
+            docker rm "$container_name" 2>/dev/null || true
+            print_success "Container removed"
+        fi
     fi
     
     # Remove all Docker images

@@ -380,6 +380,32 @@ register_website() {
     transaction_add_step "domain_dir"
     print_success "Directories created"
     
+    # Create .env template file
+    print_step "Creating environment file template..."
+    cat > "$WEB_ROOT/$domain/.env" <<'ENVEOF'
+# Environment Variables for Docker Compose
+# This file is automatically loaded by HostKit during deployment
+# 
+# Edit this file to add your application's environment variables
+# Examples:
+# NODE_ENV=production
+# DATABASE_URL=postgresql://user:pass@db:5432/dbname
+# API_KEY=your_secret_key
+# 
+# For Next.js public variables (available in browser):
+# NEXT_PUBLIC_API_URL=https://api.example.com
+# NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+# NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+
+PORT=3000
+NODE_ENV=production
+ENVEOF
+    
+    # Set appropriate permissions
+    chmod 600 "$WEB_ROOT/$domain/.env"
+    print_success ".env file created at $WEB_ROOT/$domain/.env"
+    print_info "Edit this file to configure your application's environment variables"
+    
     # Create configuration
     local all_domains=("$domain")
     all_domains+=("${redirect_domains[@]}")
@@ -887,10 +913,26 @@ setup_nginx() {
     
     print_step "Creating Nginx configuration..."
     
+    # Find certificate directory (may have suffix like -0001)
+    local cert_dir=""
     local cert_exists=false
+    
     if [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
+        cert_dir="$domain"
         cert_exists=true
-        print_info "SSL certificate found, creating HTTPS configuration"
+    else
+        # Check for directories with suffixes (e.g., domain-0001)
+        for dir in /etc/letsencrypt/live/${domain}* /etc/letsencrypt/live/${domain}-*; do
+            if [ -f "$dir/fullchain.pem" ]; then
+                cert_dir=$(basename "$dir")
+                cert_exists=true
+                break
+            fi
+        done
+    fi
+    
+    if [ "$cert_exists" = true ]; then
+        print_info "SSL certificate found at: /etc/letsencrypt/live/$cert_dir"
     else
         print_warning "No SSL certificate found, creating HTTP configuration"
     fi
@@ -923,13 +965,14 @@ EOF
 }
 
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name $domain;
 
     # SSL configuration
-    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/$cert_dir/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$cert_dir/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
@@ -986,8 +1029,9 @@ EOF
 }
 
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
 EOF
         fi
         
@@ -999,8 +1043,8 @@ EOF
             cat >> "$config_file" <<EOF
     
     # SSL configuration
-    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/$cert_dir/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$cert_dir/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 EOF
@@ -1025,14 +1069,22 @@ EOF
     transaction_add_step "nginx_config"
     
     # Test Nginx configuration
-    if nginx -t 2>/dev/null; then
-        systemctl reload nginx
-        print_success "Nginx configuration created and activated"
-        if [ ${#redirect_domains[@]} -gt 0 ]; then
-            print_info "Redirect domains configured: ${redirect_domains[*]} -> $domain"
+    print_step "Testing Nginx configuration..."
+    if nginx -t 2>&1 | grep -q "successful"; then
+        print_step "Reloading Nginx..."
+        if systemctl reload nginx 2>&1; then
+            print_success "Nginx configuration created and activated"
+            if [ ${#redirect_domains[@]} -gt 0 ]; then
+                print_info "Redirect domains configured: ${redirect_domains[*]} -> $domain"
+            fi
+        else
+            print_error "Failed to reload Nginx"
+            print_warning "Try manually: sudo systemctl reload nginx"
         fi
     else
-        print_error "Nginx configuration error"
-        nginx -t
+        print_error "Nginx configuration test failed:"
+        nginx -t 2>&1
+        print_warning "Configuration created but not activated"
+        print_info "Fix the errors and run: sudo nginx -t && sudo systemctl reload nginx"
     fi
 }

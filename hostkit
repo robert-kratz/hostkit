@@ -928,6 +928,7 @@ main() {
             show_versions "$@"
             ;;
         switch)
+            source_module "deploy"
             source_module "versions"
             switch_version "$@"
             ;;

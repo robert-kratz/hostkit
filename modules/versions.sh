@@ -127,66 +127,135 @@ switch_version() {
     local config=$(load_domain_config "$domain")
     local port=$(echo "$config" | jq -r '.port')
     local current_version=$(echo "$config" | jq -r '.current_version // "none"')
+    local deployment_type=$(echo "$config" | jq -r '.type // "single"')
     
     print_step "Switching version for: $domain"
     echo ""
     
-    # Check if version exists
-    if ! docker image inspect "${domain}:${target_version}" &>/dev/null; then
-        print_error "Version $target_version not found or image was deleted"
-        return 1
-    fi
-    
-    if [ "$target_version" = "$current_version" ]; then
-        print_warning "Version $target_version is already active"
-        exit 0
-    fi
-    
-    print_info "Current: $current_version"
-    print_info "New: $target_version"
-    echo ""
-    
-    if ! ask_yes_no "Switch version?"; then
-        print_warning "Aborted"
-        exit 0
-    fi
-    
-    # Stop old container
-    local container_name=$(get_container_name "$domain")
-    if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
-        print_step "Stopping current container..."
-        docker stop "$container_name" 2>/dev/null || true
-        docker rm "$container_name" 2>/dev/null || true
-        print_success "Container stopped"
-    fi
-    
-    # Tag new version as latest
-    docker tag "${domain}:${target_version}" "${domain}:latest"
-    
-    # Start container with new version
-    print_step "Starting container with version $target_version..."
-    
-    docker run -d \
-        --name "$container_name" \
-        --restart unless-stopped \
-        -p "127.0.0.1:${port}:${port}" \
-        -v "$WEB_ROOT/$domain/logs:/app/logs" \
-        "${domain}:${target_version}"
-    
-    if [ $? -eq 0 ]; then
-        print_success "Container started"
+    # Check if this is a compose deployment
+    if [ "$deployment_type" = "compose" ]; then
+        local image_dir="$WEB_ROOT/$domain/images"
+        local compose_backup="$WEB_ROOT/$domain/docker-compose.${target_version}.yml"
         
-        # Update config
-        local updated_config=$(echo "$config" | jq ".current_version = \"$target_version\"")
-        save_domain_config "$domain" "$updated_config"
+        if [ ! -f "$compose_backup" ]; then
+            print_error "Compose file for version $target_version not found"
+            return 1
+        fi
         
+        if [ "$target_version" = "$current_version" ]; then
+            print_warning "Version $target_version is already active"
+            exit 0
+        fi
+        
+        print_info "Current: $current_version"
+        print_info "New: $target_version"
         echo ""
-        print_success "Version switched successfully!"
-        print_info "Version: $target_version"
-        print_info "Container: $container_name"
+        
+        if ! ask_yes_no "Switch compose stack version?"; then
+            print_warning "Aborted"
+            exit 0
+        fi
+        
+        # Stop current compose stack
+        local container_name=$(get_container_name "$domain")
+        cd "$WEB_ROOT/$domain"
+        export COMPOSE_PROJECT_NAME="$container_name"
+        
+        print_step "Stopping current compose stack..."
+        docker-compose down
+        print_success "Stack stopped"
+        
+        # Restore compose file from backup
+        cp "$compose_backup" "$WEB_ROOT/$domain/docker-compose.yml"
+        
+        # Load images for this version
+        local version_tar="$image_dir/${target_version}.tar"
+        if [ -f "$version_tar" ]; then
+            print_step "Loading images for version $target_version..."
+            load_all_images_from_tar "$version_tar"
+        fi
+        
+        # Start with new version
+        print_step "Starting compose stack with version $target_version..."
+        docker-compose --env-file .env up -d
+        
+        if [ $? -eq 0 ]; then
+            print_success "Compose stack started"
+            
+            # Update config
+            local updated_config=$(echo "$config" | jq ".current_version = \"$target_version\"")
+            save_domain_config "$domain" "$updated_config"
+            
+            cd - > /dev/null
+            
+            echo ""
+            print_success "Version switched successfully!"
+            print_info "Version: $target_version"
+            print_info "Stack: $container_name"
+        else
+            print_error "Error starting compose stack"
+            cd - > /dev/null
+            return 1
+        fi
     else
-        print_error "Error starting container"
-        docker logs "$container_name"
-        return 1
+        # Standard single container version switch
+        # Check if version exists
+        if ! docker image inspect "${domain}:${target_version}" &>/dev/null; then
+            print_error "Version $target_version not found or image was deleted"
+            return 1
+        fi
+        
+        if [ "$target_version" = "$current_version" ]; then
+            print_warning "Version $target_version is already active"
+            exit 0
+        fi
+        
+        print_info "Current: $current_version"
+        print_info "New: $target_version"
+        echo ""
+        
+        if ! ask_yes_no "Switch version?"; then
+            print_warning "Aborted"
+            exit 0
+        fi
+        
+        # Stop old container
+        local container_name=$(get_container_name "$domain")
+        if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            print_step "Stopping current container..."
+            docker stop "$container_name" 2>/dev/null || true
+            docker rm "$container_name" 2>/dev/null || true
+            print_success "Container stopped"
+        fi
+        
+        # Tag new version as latest
+        docker tag "${domain}:${target_version}" "${domain}:latest"
+        
+        # Start container with new version
+        print_step "Starting container with version $target_version..."
+        
+        docker run -d \
+            --name "$container_name" \
+            --restart unless-stopped \
+            -p "127.0.0.1:${port}:${port}" \
+            -v "$WEB_ROOT/$domain/logs:/app/logs" \
+            "${domain}:${target_version}"
+        
+        if [ $? -eq 0 ]; then
+            print_success "Container started"
+            
+            # Update config
+            local updated_config=$(echo "$config" | jq ".current_version = \"$target_version\"")
+            save_domain_config "$domain" "$updated_config"
+            
+            echo ""
+            print_success "Version switched successfully!"
+            print_info "Version: $target_version"
+            print_info "Container: $container_name"
+        else
+            print_error "Error starting container"
+            docker logs "$container_name"
+            return 1
+        fi
     fi
 }
