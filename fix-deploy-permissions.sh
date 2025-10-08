@@ -155,11 +155,8 @@ fi
 
 # Allow only specific commands for deployment
 case "$SSH_ORIGINAL_COMMAND" in
-    # Allow deployment commands
+    # Allow deployment commands (must use sudo)
     "sudo hostkit deploy "*)
-        exec $SSH_ORIGINAL_COMMAND
-        ;;
-    "hostkit deploy "*)
         exec $SSH_ORIGINAL_COMMAND
         ;;
     # Allow Docker operations for deployment

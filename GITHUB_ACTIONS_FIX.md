@@ -2,12 +2,17 @@
 
 ## What Was Fixed
 
-### Issue 1: mkdir Command Blocked ✅
+### Issue 1: "This script must be run as root" ✅
+
+**Problem**: Deploy command fails because `hostkit` requires root privileges.
+**Solution**: Users must use `sudo hostkit deploy` in their workflow. SSH wrapper allows `sudo` commands.
+
+### Issue 2: mkdir Command Blocked ✅
 
 **Problem**: GitHub Actions runs `mkdir -p /opt/domains/.../deploy/` before uploading files.
 **Solution**: Added mkdir pattern to SSH wrapper allowed commands.
 
-### Issue 2: Log File Permission Denied ✅
+### Issue 3: Log File Permission Denied ✅
 
 **Problem**: SSH wrapper couldn't write to `/var/log/hostkit-ssh.log`.
 **Solution**:
@@ -15,12 +20,12 @@
 -   Made logging fail silently with `2>/dev/null || true`
 -   Create log file with proper permissions during registration
 
-### Issue 3: Insufficient Directory Permissions ✅
+### Issue 4: Insufficient Directory Permissions ✅
 
 **Problem**: Deploy directory had `755` permissions, limiting write access.
 **Solution**: Changed to `775` with ACL support for better permission control.
 
-### Issue 4: SSH Wrapper Too Restrictive ✅
+### Issue 5: SSH Wrapper Too Restrictive ✅
 
 **Problem**: SCP pattern matching was too strict for GitHub Actions format.
 **Solution**: Flexible regex pattern matching for all SCP variants.
@@ -37,6 +42,11 @@
 ### SSH Wrapper Updates
 
 ```bash
+# CHANGED: Only allow sudo deploy (removed non-sudo variant)
+"sudo hostkit deploy "*)
+    exec $SSH_ORIGINAL_COMMAND
+    ;;
+
 # NEW: Allow mkdir for deploy directories
 "mkdir -p /opt/domains/"*"/deploy/"*)
     exec $SSH_ORIGINAL_COMMAND
@@ -114,19 +124,22 @@ scp -i ~/.ssh/deploy-example-com-rsa image.tar deploy-example-com@vps:/opt/domai
 
 ### GitHub Actions
 
-Both RSA and Ed25519 keys now work! Use either in your `DEPLOY_SSH_KEY` secret.
+Both RSA and Ed25519 keys now work! **Important: Use `sudo` for deploy command!**
 
 ```yaml
-- name: Upload Image to VPS
-  uses: appleboy/scp-action@v0.1.7
-  with:
-      host: ${{ secrets.VPS_HOST }}
-      username: ${{ secrets.DEPLOY_USER }}
-      key: ${{ secrets.DEPLOY_SSH_KEY }} # Works with both key types
-      port: ${{ secrets.VPS_PORT || 22 }}
-      source: "image.tar"
-      target: "/opt/domains/${{ secrets.DOMAIN }}/deploy/"
+- name: Upload Image to VPS via SCP
+  run: |
+      scp -P "$SSH_PORT" image.tar \
+        "$DEPLOY_USER@$VPS_HOST:/opt/domains/$DOMAIN/deploy/image.tar"
+
+- name: Deploy on VPS
+  run: |
+      ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
+        "sudo hostkit deploy $DOMAIN /opt/domains/$DOMAIN/deploy/image.tar"
+      # ^^^^^ CRITICAL: Must use sudo!
 ```
+
+See [github-actions-complete-workflow.yml](./docs/github-actions-complete-workflow.yml) for full example.
 
 ## Verification
 

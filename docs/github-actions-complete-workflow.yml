@@ -1,0 +1,77 @@
+# GitHub Actions Deployment Workflow - Complete Working Example
+
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Allows manual triggering
+
+# Prevent multiple deployments at once
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    env:
+      DOMAIN: ${{ secrets.DOMAIN }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      SSH_PORT: ${{ secrets.VPS_PORT != '' && secrets.VPS_PORT || '22' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        run: |
+          docker build -t "$DOMAIN" .
+          docker save "$DOMAIN" > image.tar
+
+      - name: Start ssh-agent and add key
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Add server host key to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload Image to VPS via SCP
+        run: |
+          scp -P "$SSH_PORT" image.tar \
+            "$DEPLOY_USER@$VPS_HOST:/opt/domains/$DOMAIN/deploy/image.tar"
+
+      - name: Deploy on VPS
+        run: |
+          ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
+            "sudo hostkit deploy $DOMAIN /opt/domains/$DOMAIN/deploy/image.tar"
+
+      - name: Cleanup deployment file
+        run: |
+          ssh -p "$SSH_PORT" "$DEPLOY_USER@$VPS_HOST" \
+            "rm -f /opt/domains/$DOMAIN/deploy/image.tar"
+        continue-on-error: true
+
+      - name: Health Check
+        run: |
+          sleep 10
+          curl -fsS "https://$DOMAIN" >/dev/null || {
+            echo "Health check failed!"
+            exit 1
+          }
+
+      - name: Notification on Success
+        if: success()
+        run: echo "✅ Deployment successful!"
+
+      - name: Notification on Failure
+        if: failure()
+        run: echo "❌ Deployment failed!"
