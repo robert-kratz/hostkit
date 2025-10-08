@@ -535,7 +535,7 @@ create_ssh_user() {
     local ssh_config_dir="/etc/ssh/sshd_config.d"
     mkdir -p "$ssh_config_dir"
     
-    cat > "$ssh_config_dir/${username}.conf" <<EOF
+    cat > "$ssh_config_dir/hostkit-${username}.conf" <<EOF
 # SSH hardening for deployment user $username
 Match User $username
     # Disable password authentication for this user
@@ -544,12 +544,12 @@ Match User $username
     ChallengeResponseAuthentication no
     # Force public key authentication only
     AuthenticationMethods publickey
-    # Restrict to specific commands only
+    # Restrict to specific commands only (allows SCP/SFTP via wrapper)
     ForceCommand /opt/hostkit/ssh-wrapper.sh
     # Disable port forwarding
     AllowTcpForwarding no
     AllowStreamLocalForwarding no
-    # Disable tty allocation for scripts
+    # Disable tty allocation for scripts (allows SCP to work)
     PermitTTY no
     # Disable X11 forwarding
     X11Forwarding no
@@ -573,17 +573,18 @@ EOF
     chmod 755 "$WEB_ROOT/$domain/deploy"
     
     # Enhanced sudo permissions - only specific commands
-    cat > "/etc/sudoers.d/$username" <<EOF
+    cat > "/etc/sudoers.d/hostkit-$username" <<EOF
 # Deployment permissions for $username
 Defaults:$username !requiretty
-$username ALL=(root) NOPASSWD: /opt/hostkit/deploy.sh $domain *
+$username ALL=(root) NOPASSWD: /usr/bin/hostkit deploy $domain *
+$username ALL=(root) NOPASSWD: /opt/hostkit/hostkit deploy $domain *
 $username ALL=(root) NOPASSWD: /usr/bin/docker load
 $username ALL=(root) NOPASSWD: /usr/bin/docker run *
 $username ALL=(root) NOPASSWD: /usr/bin/docker stop *
 $username ALL=(root) NOPASSWD: /usr/bin/docker rm *
 $username ALL=(root) NOPASSWD: /usr/bin/systemctl reload nginx
 EOF
-    chmod 440 "/etc/sudoers.d/$username"
+    chmod 440 "/etc/sudoers.d/hostkit-$username"
     
     # Create SSH wrapper script for command restriction
     create_ssh_wrapper "$username"
@@ -610,9 +611,19 @@ create_ssh_wrapper() {
 # Log all connection attempts
 echo "$(date): SSH connection from $SSH_CLIENT as $USER: $SSH_ORIGINAL_COMMAND" >> /var/log/hostkit-ssh.log
 
+# If no command specified, deny interactive shell
+if [ -z "$SSH_ORIGINAL_COMMAND" ]; then
+    echo "ERROR: Interactive shell access not allowed"
+    echo "This account is restricted to deployment operations only"
+    exit 1
+fi
+
 # Allow only specific commands for deployment
 case "$SSH_ORIGINAL_COMMAND" in
     # Allow deployment commands
+    "sudo hostkit deploy "*)
+        exec $SSH_ORIGINAL_COMMAND
+        ;;
     "hostkit deploy "*)
         exec $SSH_ORIGINAL_COMMAND
         ;;
@@ -620,8 +631,18 @@ case "$SSH_ORIGINAL_COMMAND" in
     "sudo /opt/hostkit/deploy.sh "*)
         exec $SSH_ORIGINAL_COMMAND
         ;;
-    # Allow file upload to deployment directory
-    "scp "*" "*/deploy/"*)
+    # Allow SCP file uploads to deployment directory (target mode)
+    scp\ -t\ */deploy/*)
+        exec $SSH_ORIGINAL_COMMAND
+        ;;
+    scp\ -t\ /opt/domains/*/deploy/*)
+        exec $SSH_ORIGINAL_COMMAND
+        ;;
+    # Allow SCP with various flags
+    scp\ *\ -t\ */deploy/*)
+        exec $SSH_ORIGINAL_COMMAND
+        ;;
+    scp\ *\ -t\ /opt/domains/*/deploy/*)
         exec $SSH_ORIGINAL_COMMAND
         ;;
     # Allow rsync to deployment directory
@@ -630,11 +651,18 @@ case "$SSH_ORIGINAL_COMMAND" in
             exec $SSH_ORIGINAL_COMMAND
         else
             echo "ERROR: rsync only allowed to deployment directories"
-            return 1
+            exit 1
         fi
         ;;
-    # Allow SFTP for file upload (restricted to home directory)
+    # Allow SFTP subsystem for file upload
     "internal-sftp")
+        exec /usr/lib/openssh/sftp-server
+        ;;
+    # Allow sftp-server directly
+    /usr/lib/openssh/sftp-server*)
+        exec $SSH_ORIGINAL_COMMAND
+        ;;
+    /usr/libexec/openssh/sftp-server*)
         exec $SSH_ORIGINAL_COMMAND
         ;;
     # Reject all other commands

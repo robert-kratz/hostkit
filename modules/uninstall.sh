@@ -314,11 +314,13 @@ remove_users() {
             # Remove user and home directory
             userdel -r "$username" 2>/dev/null || true
             
-            # Remove SSH config
-            local ssh_config="/etc/ssh/sshd_config.d/${username}.conf"
-            if [ -f "$ssh_config" ]; then
-                rm -f "$ssh_config"
-            fi
+            # Remove SSH config (try both old and new naming)
+            rm -f "/etc/ssh/sshd_config.d/${username}.conf"
+            rm -f "/etc/ssh/sshd_config.d/hostkit-${username}.conf"
+            
+            # Remove sudoers file (try both old and new naming)
+            rm -f "/etc/sudoers.d/$username"
+            rm -f "/etc/sudoers.d/hostkit-$username"
             
             ((removed_count++))
         fi

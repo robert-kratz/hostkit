@@ -443,17 +443,31 @@ show_user_info() {
     echo -e "${WHITE}                  SECURITY & PERMISSIONS                   ${NC}"
     echo -e "${WHITE}═══════════════════════════════════════════════════════════${NC}"
     
-    # Check sudo permissions
-    if [ -f "/etc/sudoers.d/$username" ]; then
-        echo -e "${CYAN}Sudo Rules:${NC} Found (/etc/sudoers.d/$username)"
-        echo "  $(grep -v '^#' "/etc/sudoers.d/$username" | head -3 | sed 's/^/  /')"
+    # Check sudo permissions (try both old and new naming)
+    local sudoers_file=""
+    if [ -f "/etc/sudoers.d/hostkit-$username" ]; then
+        sudoers_file="/etc/sudoers.d/hostkit-$username"
+    elif [ -f "/etc/sudoers.d/$username" ]; then
+        sudoers_file="/etc/sudoers.d/$username"
+    fi
+    
+    if [ -n "$sudoers_file" ]; then
+        echo -e "${CYAN}Sudo Rules:${NC} Found ($sudoers_file)"
+        echo "  $(grep -v '^#' "$sudoers_file" | head -3 | sed 's/^/  /')"
     else
         echo -e "${CYAN}Sudo Rules:${NC} Not found"
     fi
     
-    # Check SSH config
-    if [ -f "/etc/ssh/sshd_config.d/$username.conf" ]; then
-        echo -e "${CYAN}SSH Restrictions:${NC} Found (/etc/ssh/sshd_config.d/$username.conf)"
+    # Check SSH config (try both old and new naming)
+    local ssh_config=""
+    if [ -f "/etc/ssh/sshd_config.d/hostkit-$username.conf" ]; then
+        ssh_config="/etc/ssh/sshd_config.d/hostkit-$username.conf"
+    elif [ -f "/etc/ssh/sshd_config.d/$username.conf" ]; then
+        ssh_config="/etc/ssh/sshd_config.d/$username.conf"
+    fi
+    
+    if [ -n "$ssh_config" ]; then
+        echo -e "${CYAN}SSH Restrictions:${NC} Found ($ssh_config)"
     else
         echo -e "${CYAN}SSH Restrictions:${NC} Not found"
     fi

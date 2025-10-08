@@ -149,7 +149,9 @@ remove_website() {
         if ask_yes_no "Remove SSH user '$username'?"; then
             print_step "Removing SSH user..."
             userdel -r "$username" 2>/dev/null || userdel "$username" 2>/dev/null || true
-            rm -f "/etc/sudoers.d/$username"
+            rm -f "/etc/sudoers.d/$username" "/etc/sudoers.d/hostkit-$username"
+            rm -f "/etc/ssh/sshd_config.d/$username.conf" "/etc/ssh/sshd_config.d/hostkit-$username.conf"
+            systemctl reload sshd 2>/dev/null || true
             print_success "SSH user removed"
         fi
     fi
