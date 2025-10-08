@@ -493,22 +493,28 @@ create_ssh_user() {
     local private_key="$ssh_dir/$key_name"
     local public_key="$ssh_dir/${key_name}.pub"
     
-    if [ -f "$private_key" ]; then
+    if [ -f "$private_key" ] || [ -f "${private_key}-rsa" ]; then
         print_warning "SSH keys already exist"
         if ask_yes_no "Regenerate SSH keys for better security?"; then
+            # Remove both Ed25519 and RSA keys
             rm -f "$private_key" "$public_key"
+            rm -f "${private_key}-rsa" "${public_key}-rsa"
         else
             print_info "Using existing keys"
         fi
     fi
     
-    if [ ! -f "$private_key" ]; then
+    if [ ! -f "$private_key" ] || [ ! -f "${private_key}-rsa" ]; then
         print_step "Generating hardened SSH key pair..."
+        
+        # Ensure old keys are completely removed before generating new ones
+        rm -f "$private_key" "$public_key" "${private_key}-rsa" "${public_key}-rsa"
         
         # Generate RSA key with 4096 bits and modern cipher for GitHub Actions compatibility
         # Also generate ed25519 as primary (more secure)
-        ssh-keygen -t rsa -b 4096 -f "${private_key}-rsa" -N "" -C "deploy-rsa@$domain" >/dev/null 2>&1
-        ssh-keygen -t ed25519 -f "$private_key" -N "" -C "deploy@$domain" >/dev/null 2>&1
+        # Using -y to force overwrite without prompting (though we already deleted)
+        ssh-keygen -t rsa -b 4096 -f "${private_key}-rsa" -N "" -C "deploy-rsa@$domain" -q >/dev/null 2>&1
+        ssh-keygen -t ed25519 -f "$private_key" -N "" -C "deploy@$domain" -q >/dev/null 2>&1
         
         transaction_add_step "ssh_keys"
         print_success "SSH keys generated (both RSA 4096-bit and Ed25519)"
