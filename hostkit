@@ -719,6 +719,8 @@ show_help() {
     echo -e "                              Supports rollback to previous versions"
     echo ""
     echo -e "${WHITE}SSL CERTIFICATE MANAGEMENT:${NC}"
+    echo -e "  ${GREEN}ssl-setup${NC} <domain|id>      Setup SSL certificate for an existing website"
+    echo -e "                              Request Let's Encrypt certificate and configure HTTPS"
     echo -e "  ${GREEN}ssl-status${NC} [domain]        Show SSL certificate status and expiry"
     echo -e "                              Use 'ssl-status all' for all domains"
     echo -e "  ${GREEN}ssl-renew${NC} [domain]         Renew SSL certificates"
@@ -929,11 +931,17 @@ main() {
             source_module "remove"
             remove_website "$@"
             ;;
+        ssl-setup)
+            source_module "ssl"
+            ssl_setup_domain "$@"
+            ;;
         ssl-status)
-            show_ssl_status "$@"
+            source_module "ssl"
+            ssl_status "$@"
             ;;
         ssl-renew)
-            renew_ssl_certificates "$@"
+            source_module "ssl"
+            ssl_renew "$@"
             ;;
         list-users)
             source_module "users"

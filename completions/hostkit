@@ -12,14 +12,14 @@ _hostkit_completion() {
     _init_completion || return
 
     # Available commands
-    local commands="register list info start stop restart deploy versions switch logs remove ssl-status ssl-renew list-users show-keys regenerate-keys user-info list-keys add-key show-key remove-key update uninstall version help"
+    local commands="register list info start stop restart deploy versions switch logs remove ssl-setup ssl-status ssl-renew list-users show-keys regenerate-keys user-info list-keys add-key show-key remove-key update uninstall version help"
     
     case "${prev}" in
         hostkit)
             COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
             return 0
             ;;
-        info|start|stop|restart|logs|remove|deploy|versions|switch|show-keys|regenerate-keys|list-keys|add-key|show-key|remove-key)
+        info|start|stop|restart|logs|remove|deploy|versions|switch|ssl-setup|show-keys|regenerate-keys|list-keys|add-key|show-key|remove-key)
             # Complete with available domains and IDs
             local domains=""
             local ids=""
